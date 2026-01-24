@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="card">
+  <h1>Projects</h1>
+
+  <h2>{{ module1_title }}</h2>
+
+  <p class="text">
+    {{ module1_details }}
+  </p>
+
+  <p>
+    <strong>GitHub:</strong>
+    <a href="{{ github_url }}" target="_blank" rel="noreferrer">
+      {{ github_url }}
+    </a>
+  </p>
+</div>
+
+{% endblock %}

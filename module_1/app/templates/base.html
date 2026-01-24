@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>{{ page_title }}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  </head>
+
+  <body>
+    <header class="site-header">
+  <div class="header-inner">
+    <div class="brand">
+      Module 1 – Personal Developer Site
+    </div>
+
+    <nav class="nav">
+      <a href="{{ url_for('pages.home') }}"
+         class="nav-link {% if request.path == '/' %}active{% endif %}">
+        Home
+      </a>
+
+      <a href="{{ url_for('pages.projects') }}"
+         class="nav-link {% if request.path.startswith('/projects') %}active{% endif %}">
+        Projects
+      </a>
+
+      <a href="{{ url_for('pages.contact') }}"
+         class="nav-link {% if request.path.startswith('/contact') %}active{% endif %}">
+        Contact
+      </a>
+    </nav>
+  </div>
+</header>
+
+    <main class="container">
+      {% block content %}{% endblock %}
+    </main>
+  </body>
+</html>

@@ -1,0 +1,114 @@
+/* ---------- COLOR DEFINITIONS ---------- */
+:root {
+  /* Page */
+  --page-bg: #0b1020;          /* dark navy */
+  --page-text: #eef2ff;
+
+  /* Navigation bar (CLEARLY DIFFERENT COLOR) */
+  --nav-bg: #1f4ed8;           /* strong blue */
+  --nav-text: #ffffff;
+
+  /* Active tab */
+  --active-bg: #ffd166;        /* gold */
+  --active-text: #1a1a1a;
+
+  /* Cards */
+  --card-bg: #ffffff;
+  --card-text: #1a1a1a;
+}
+
+/* ---------- GLOBAL ---------- */
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  background: var(--page-bg);      /* ← NOT WHITE */
+  color: var(--page-text);
+}
+
+/* ---------- FULL-WIDTH NAV BAR ---------- */
+.site-header {
+  width: 100%;                     /* ← FULL WIDTH */
+  background: var(--nav-bg);       /* ← OBVIOUS COLOR */
+}
+
+/* Keep content centered INSIDE header */
+.header-inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 14px 24px;
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* Branding */
+.brand {
+  font-weight: 800;
+  letter-spacing: 0.4px;
+}
+
+/* Navigation */
+.nav {
+  display: flex;
+  gap: 10px;
+}
+
+.nav-link {
+  color: var(--nav-text);
+  text-decoration: none;
+  padding: 10px 16px;
+  border-radius: 6px;
+  font-weight: 700;
+}
+
+/* CLEAR ACTIVE TAB */
+.nav-link.active {
+  background: var(--active-bg);
+  color: var(--active-text);
+}
+
+/* ---------- PAGE CONTENT ---------- */
+.container {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.card {
+  background: var(--card-bg);
+  color: var(--card-text);
+  padding: 20px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+}
+
+/* Home layout */
+.home-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr;
+  gap: 20px;
+}
+
+.image-card {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.headshot {
+  width: 100%;
+  max-width: 300px;
+  border-radius: 10px;
+}
+
+/* Mobile */
+@media (max-width: 768px) {
+  .home-grid {
+    grid-template-columns: 1fr;
+  }
+}

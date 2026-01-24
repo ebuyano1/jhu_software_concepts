@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<section class="home-grid">
+
+  <!-- Left side of page: About me + informattion -->
+  <div class="card">
+    <h1 class="title">{{ name }}</h1>
+    <p class="subtitle">{{ position }}</p>
+
+    <h2>About me</h2>
+    <p class="text">{{ bio }}</p>
+
+    <h2>Contact</h2>
+    <ul class="list">
+      <li>
+        <strong>Email:</strong>
+        <a href="mailto:{{ email }}">{{ email }}</a>
+      </li>
+      <li>
+        <strong>LinkedIn:</strong>
+        <a href="{{ linkedin_url }}" target="_blank" rel="noreferrer">
+          {{ linkedin_text }}
+        </a>
+      </li>
+    </ul>
+  </div>
+
+  <!-- Right Side of page: My photo -->
+  <div class="card image-card">
+    <img
+      class="headshot"
+      src="{{ url_for('static', filename=image_filename) }}"
+      alt="Profile picture of {{ name }}"
+    />
+  </div>
+
+</section>
+
+{% endblock %}
