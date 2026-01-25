@@ -46,7 +46,7 @@ def projects():
             "This is a personal website, "
             "I am building it with Flask and Python."
         ),
-        github_url="https://github.com/ebuyano1/jhu_software_concepts\module_1",
+        github_url="https://github.com/ebuyano1/jhu_software_concepts/tree/main/module_1",
     )
 
 @main_pages_blueprint.get("/contact")
