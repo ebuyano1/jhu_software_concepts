@@ -1,2 +1,3 @@
 # Version of Flask
+# Flask pinned for reproducible installs across machines/grading.
 Flask==3.0.3

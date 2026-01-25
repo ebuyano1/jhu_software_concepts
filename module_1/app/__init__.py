@@ -1,3 +1,6 @@
+# Application factory creates and configures the Flask app.
+# Registers the pages blueprint that contains routes for Home/Projects/Contact.
+
 from flask import Flask
 
 def create_app():

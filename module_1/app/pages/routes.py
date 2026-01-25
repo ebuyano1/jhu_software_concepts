@@ -1,3 +1,8 @@
+# Routes for the personal developer website:
+# - "/" home page (bio + image)
+# - "/projects" module 1 project info + GitHub link
+# - "/contact" email + LinkedIn
+
 from flask import Blueprint, render_template
 
 main_pages_blueprint = Blueprint("pages", __name__)
