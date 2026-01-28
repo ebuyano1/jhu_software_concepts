@@ -1,0 +1,4 @@
+beautifulsoup4
+flask
+huggingface_hub
+llama-cpp-python
