@@ -20,8 +20,9 @@ The cleaned dataset is going to be used in later course modules as per the offic
 Approach
 Part 1 – Data Collection (scrape.py)
 --------------------------------------------------------------------------------------------------------
-Confirmed scraping permission by checking the site's robots.txt file (screenshot included).
-Used urllib.request to send HTTP requests and receive responses. (Confirmed during office hours that we need to use urllib not urllib3 )
+Confirmed scraping permission and compliance by checking the site's robots.txt file (screenshot included - screenshot.jpg).
+Used urllib.request to send HTTP requests and receive responses. 
+(Confirmed during office hours that we need to use urllib not urllib3)
 Parsed HTML using BeautifulSoup.
 Extracted structured data using string methods and RegEx/regular expressions, including:
 
