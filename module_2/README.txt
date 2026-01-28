@@ -17,6 +17,33 @@ This project programmatically scrapes and collects publicly available graduate a
 puts it into JSON format, and standardizes program and university names using a locally hosted language model provided by my professor. 
 The cleaned dataset is going to be used in later course modules as per the office hours. This assignment was challenging :)
 
+
+--------------------------------------------------------------------------------------------------------
+Project Structure
+--------------------------------------------------------------------------------------------------------
+- scrape.py                     : Scrapes graduate admissions results from TheGradCafe using urllib and BeautifulSoup.
+                                  Collects ~30,000 records with pagination, retry logic, and parallel fetching.
+
+- clean.py                      : Cleans and standardizes scraped data using the professor-provided local LLM.
+                                  Adds llm-generated-program and llm-generated-university fields.
+
+- applicant_data.json           : Raw scraped output produced by scrape.py (input to clean.py).
+
+- llm_extend_applicant_data.json: Cleaned and standardized output produced by clean.py.
+
+- llm_hosting/                  : Professor-provided LLM hosting utilities (unchanged).
+  - app.py                      : Local Flask server and LLM interface used for standardization.
+  - requirements.txt            : Dependencies required to run the local LLM server.
+  - canon_programs.txt          : Canonical program names used by the LLM.
+  - canon_universities.txt      : Canonical university names used by the LLM.
+  - sample_data.json            : Sample input data for LLM testing.
+
+- requirements.txt              : Python dependencies for Module 2 scripts (scrape.py and clean.py).
+
+- README.txt                    : Project documentation and usage notes for Module 2.
+
+--------------------------------------------------------------------------------------------------------
+
 Approach
 Part 1 – Data Collection (scrape.py)
 --------------------------------------------------------------------------------------------------------
