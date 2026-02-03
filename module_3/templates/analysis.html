@@ -1,0 +1,225 @@
+<!--
+- Page to show SQL results from PostgreSQL.
+- Provide two required UI actions:
+  1) Pull Data: invoke Module 2 scrape + clean and upserts new rows into the PostgreSQL applicants table.
+  2) Update Analysis: re-do all SQL query answers and refreshes the page.
+- Update Analysis does nothing while Pull Data is running, the UI shows  this state and shows a friendly message to 
+end user.
+-->
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Module 3 - Databases</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="title">
+        <h1>Module 3 — Databases & Analysis Dashboard</h1>
+        <p class="subtitle">
+          This page displays analysis results computed from my local PostgreSQL database.
+        </p>
+        <p class="subtitle" style="margin-top:6px;">
+          <strong>Pull Data</strong> runs the Module 2 scraper/cleaner and upserts any new results into the database.
+          <strong>Update Analysis</strong> recomputes the SQL answers (disabled while Pull Data is running).
+        </p>
+      </div>
+
+      <div class="actions">
+        <button id="btnPull" class="btn btn-primary" type="button">Pull Data</button>
+        <button id="btnUpdate" class="btn btn-secondary" type="button">Update Analysis</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-body">
+        <div class="status">
+          <div class="left">
+            <div class="label">Status</div>
+            <div class="message" id="statusMsg">
+              {% if pull_state and pull_state.is_pulling %}
+                Pull Data is running…
+              {% else %}
+                Ready.
+              {% endif %}
+            </div>
+          </div>
+          <div class="pill" id="statusMeta">
+            {% if pull_state and pull_state.is_pulling %}Pulling…{% else %}Idle{% endif %}
+          </div>
+        </div>
+
+        <div style="margin-top:12px; {% if pull_state and pull_state.last_log %}display:block;{% else %}display:none;{% endif %}" id="logWrap">
+          <div class="label" style="margin:8px 0;">Output</div>
+          <div class="log" id="logBox">{% if pull_state and pull_state.last_log %}{{ pull_state.last_log }}{% endif %}</div>
+        </div>
+
+        <div class="grid" style="margin-top: 18px;">
+          {% for item in rows %}
+            <div class="qcard">
+              <div class="qtitle">
+                <h3>{{ loop.index }}. {{ item.question }}</h3>
+              </div>
+
+              <div class="answer">
+                {% if item.answer is mapping or (item.answer is sequence and item.answer is not string) %}
+                  <pre class="log" style="margin:10px 0 0;">{{ item.answer | tojson(indent=2) }}</pre>
+                {% else %}
+                  {{ item.answer }}
+                {% endif %}
+              </div>
+
+              <div class="sql-toggle" data-target="sql{{ loop.index }}">Show SQL</div>
+              <div class="sql" id="sql{{ loop.index }}">{{ item.sql }}</div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+  // Toggle SQL visibility
+  document.querySelectorAll('.sql-toggle').forEach(t => {
+    t.addEventListener('click', () => {
+      const id = t.getAttribute('data-target');
+      const el = document.getElementById(id);
+      el.classList.toggle('show');
+      t.textContent = el.classList.contains('show') ? 'Hide SQL' : 'Show SQL';
+    });
+  });
+
+  const btnPull = document.getElementById('btnPull');
+  const btnUpdate = document.getElementById('btnUpdate');
+  const statusMsg = document.getElementById('statusMsg');
+  const statusMeta = document.getElementById('statusMeta');
+  const logWrap = document.getElementById('logWrap');
+  const logBox = document.getElementById('logBox');
+
+  function showLog(text) {
+    const s = (text === undefined || text === null) ? '' : String(text);
+    if (s.trim().length > 0) {
+      logWrap.style.display = 'block';
+      logBox.textContent = s;
+    } else {
+      logWrap.style.display = 'none';
+      logBox.textContent = '';
+    }
+  }
+
+  async function postJson(url) {
+    const resp = await fetch(url, { method: 'POST', headers: { 'Accept': 'application/json' } });
+    const data = await resp.json().catch(() => ({}));
+    return { resp, data };
+  }
+
+  async function refreshStatusOnce() {
+    const resp = await fetch('/pull-status', { headers: { 'Accept': 'application/json' } });
+    const data = await resp.json();
+    if (!data || data.ok !== true) return;
+
+    if (data.is_pulling) {
+      statusMeta.textContent = 'Pulling…';
+      statusMsg.textContent = 'Pull Data is running…';
+      btnPull.disabled = true;
+      btnUpdate.disabled = true;
+    } else {
+      statusMeta.textContent = 'Idle';
+      statusMsg.textContent = 'Ready.';
+      btnPull.disabled = false;
+      btnUpdate.disabled = false;
+    }
+
+    if (data.last_log) showLog(data.last_log);
+  }
+
+  async function pullData() {
+    statusMeta.textContent = 'Working…';
+    statusMsg.textContent = 'Starting Pull Data…';
+    btnPull.disabled = true;
+    btnUpdate.disabled = true;
+    showLog('');
+
+    try {
+      const { resp, data } = await postJson('/pull-data');
+      if (!resp.ok || data.ok === false) {
+        statusMeta.textContent = 'Error';
+        statusMsg.textContent = 'Pull Data failed.';
+        showLog(data.error || 'Unknown error.');
+        btnPull.disabled = false;
+        btnUpdate.disabled = false;
+        return;
+      }
+
+      statusMeta.textContent = 'Pulling…';
+      statusMsg.textContent = 'Pull Data is running…';
+      showLog(data.message || 'Pull started.');
+
+      // Poll status until finished, then refresh page
+      const poll = setInterval(async () => {
+        await refreshStatusOnce();
+        const stResp = await fetch('/pull-status', { headers: { 'Accept': 'application/json' } });
+        const st = await stResp.json();
+        if (st && st.ok === true && st.is_pulling === false) {
+          clearInterval(poll);
+          statusMeta.textContent = 'Done';
+          statusMsg.textContent = 'Pull complete. Refreshing…';
+          window.location.reload();
+        }
+      }, 1200);
+
+    } catch (e) {
+      statusMeta.textContent = 'Error';
+      statusMsg.textContent = 'Pull Data failed.';
+      showLog(String(e));
+      btnPull.disabled = false;
+      btnUpdate.disabled = false;
+    }
+  }
+
+  async function updateAnalysis() {
+    // First check status; if pulling, show user-friendly message
+    await refreshStatusOnce();
+    if (statusMeta.textContent.includes('Pulling')) {
+      showLog('Update Analysis is disabled while Pull Data is running.');
+      return;
+    }
+
+    statusMeta.textContent = 'Working…';
+    statusMsg.textContent = 'Recomputing analysis…';
+    btnUpdate.disabled = true;
+
+    try {
+      const { resp, data } = await postJson('/update-analysis');
+      if (!resp.ok || data.ok === false) {
+        statusMeta.textContent = 'Error';
+        statusMsg.textContent = 'Update failed.';
+        showLog(data.error || 'Unknown error.');
+        btnUpdate.disabled = false;
+        return;
+      }
+
+      statusMeta.textContent = 'Done';
+      statusMsg.textContent = 'Analysis updated. Refreshing…';
+      if (data.log) showLog(data.log);
+      if (data.refresh === true) window.location.reload();
+    } catch (e) {
+      statusMeta.textContent = 'Error';
+      statusMsg.textContent = 'Update failed.';
+      showLog(String(e));
+      btnUpdate.disabled = false;
+    }
+  }
+
+  if (btnPull) btnPull.addEventListener('click', pullData);
+  if (btnUpdate) btnUpdate.addEventListener('click', updateAnalysis);
+
+  // Initial status check (covers refresh while a pull is running)
+  refreshStatusOnce();
+</script>
+</body>
+</html>
