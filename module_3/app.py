@@ -1,171 +1,225 @@
 """
-app.py (Module 3) — Flask dashboard + Pull Data + Update Analysis
+Flask app for Module 3 — Databases & Analysis Dashboard.
 
-From module 2:
-  - ../module_2/scrape.py produces applicant_data.json
-  - ../module_2/clean.py produces llm_extend_applicant_data.json
+This version adds a small, readable presentation layer for the webpage:
+- Some answers naturally come back as structured data (dict/list). Instead of showing
+  raw Python objects, we format them into labeled lines like:
+    "Average GPA: 3.80"
+    "Average GRE (Q): 279.68"
 
-Pull Data:
-  1) Runs scrape.py, clean.py 
-  2) Loads ../module_2/llm_extend_applicant_data.json and then uses upserts to put data into PostgreSQL
-
-Update Analysis behavior:
-  - Re-Calculcates the analysis if Pull Data is not running .
+Core assignment behavior is unchanged:
+- Pull Data runs in the background and loads JSON into PostgreSQL.
+- Update Analysis does nothing while Pull Data is running.
 """
 
 from __future__ import annotations
 
 import os
-import sys
-import time
 import threading
-import subprocess
-from typing import Optional, Dict, Any
+from typing import Any, Dict, List
 
 from flask import Flask, jsonify, redirect, render_template, request, url_for
 
+from load_data import load_json_to_db
 from query_data import get_analysis
-from load_data import load_json, load_rows
 
 app = Flask(__name__)
 
-# -----------------------------
-# Thread safe pull state
-# -----------------------------
+# -------------------------------------------------------------------
+# Shared state for the background "Pull Data" job
+# -------------------------------------------------------------------
 _pull_lock = threading.Lock()
-_is_pulling = False
-_pull_last_log = ""
-_pull_last_loaded = 0
-_pull_last_finished_at: Optional[float] = None
+_is_pulling: bool = False
+_last_log: str = ""
+
+# Friendly label overrides for common structured outputs
+_LABEL_MAP = {
+    "avg_gpa": "Average GPA",
+    "avg_gre_q": "Average GRE (Q)",
+    "avg_gre_v": "Average GRE (V)",
+    "avg_gre_aw": "Average GRE (AW)",
+    "avg_gre": "Average GRE",
+    "count": "Count",
+    "num_applications": "Number of applications",
+    "num_applicants": "Number of applicants",
+    "num_accepted": "Number accepted",
+    "percent_international": "Percent international",
+    "acceptance_rate": "Acceptance rate",
+    "pct": "Percent",
+    "percentage": "Percent",
+}
 
 
-def _wants_json() -> bool:
-    accept = request.headers.get("Accept", "")
-    return "application/json" in accept.lower()
+def _to_label(key: str) -> str:
+    k = str(key).strip()
+    if not k:
+        return "Value"
+    if k in _LABEL_MAP:
+        return _LABEL_MAP[k]
+    # Fallback: snake_case -> Title Case
+    return " ".join(w.capitalize() for w in k.replace("-", "_").split("_"))
 
 
-def _set_pull_state(is_pulling: bool, log: str = "", loaded: int = 0) -> None:
-    global _is_pulling, _pull_last_log, _pull_last_loaded, _pull_last_finished_at
-    with _pull_lock:
-        _is_pulling = is_pulling
-        if log:
-            _pull_last_log = log
-        if loaded:
-            _pull_last_loaded = loaded
-        if not is_pulling:
-            _pull_last_finished_at = time.time()
+def _format_number(key: str, value: Any) -> str:
+    if value is None:
+        return "N/A"
 
-
-def _get_pull_state() -> Dict[str, Any]:
-    with _pull_lock:
-        return {
-            "is_pulling": _is_pulling,
-            "last_log": _pull_last_log,
-            "last_loaded": _pull_last_loaded,
-            "last_finished_at": _pull_last_finished_at,
-        }
-
-
-def _run_module2_pipeline() -> str:
-    """Run Module 2 scrape + clean. Return path to cleaned JSON."""
-    # Allow overrides if you ever move files
-    mod2_dir = os.getenv("MODULE2_DIR", os.path.join("..", "module_2"))
-    scrape_script = os.getenv("MODULE2_SCRAPE", os.path.join(mod2_dir, "scrape.py"))
-    clean_script = os.getenv("MODULE2_CLEAN", os.path.join(mod2_dir, "clean.py"))
-    cleaned_json = os.getenv("MODULE2_CLEANED_JSON", os.path.join(mod2_dir, "llm_extend_applicant_data.json"))
-
-    # Run scrape.py if present
-    if os.path.exists(scrape_script):
-        subprocess.run([sys.executable, scrape_script], check=True)
+    # Numeric coercion
+    num = None
+    if isinstance(value, (int, float)):
+        num = float(value)
     else:
-        # Not fatal if applicant_data.json is there from a prior run
-        pass
+        try:
+            num = float(str(value).strip())
+        except Exception:
+            return str(value)
 
-    # Run clean.py if present
-    if os.path.exists(clean_script):
-        subprocess.run([sys.executable, clean_script], check=True)
-    else:
-        # Not fatal if llm_extend_applicant_data.json is there from a prior run
-        pass
+    k = str(key).lower()
+    if any(tok in k for tok in ("percent", "pct", "rate")):
+        # Treat 0..1 as a ratio, print as percent
+        if 0 <= num <= 1:
+            return f"{num * 100:.2f}%"
+        return f"{num:.2f}%"
 
-    return cleaned_json
-
-
-def _pull_job() -> None:
-    try:
-        t0 = time.time()
-        cleaned_json = _run_module2_pipeline()
-
-        if not os.path.exists(cleaned_json):
-            raise FileNotFoundError(
-                f"Cleaned JSON not found at '{cleaned_json}'. "
-                "Run Module 2 (scrape.py then clean.py), or set MODULE2_* env vars."
-            )
-
-        rows = load_json(cleaned_json)
-        loaded = load_rows(rows)
-        elapsed = round(time.time() - t0, 2)
-
-        _set_pull_state(
-            is_pulling=False,
-            log=f"Pull Data complete. Loaded/updated {loaded} rows from {cleaned_json} in {elapsed:.2f}s.",
-            loaded=loaded,
-        )
-    except Exception as e:
-        _set_pull_state(is_pulling=False, log=f"Pull Data failed: {e}")
+    if float(num).is_integer():
+        return str(int(num))
+    return f"{num:.2f}"
 
 
+def format_answer_lines(answer: Any) -> List[str]:
+    """
+    Convert an answer into readable lines for the webpage.
+    The goal is clarity, not showing raw Python objects.
+    """
+    if answer is None:
+        return ["N/A"]
+
+    if isinstance(answer, dict):
+        lines: List[str] = []
+        for k, v in answer.items():
+            lines.append(f"{_to_label(k)}: {_format_number(k, v)}")
+        return lines
+
+    if isinstance(answer, (list, tuple)):
+        if len(answer) == 0:
+            return ["(no rows)"]
+        lines = []
+        for item in answer:
+            if isinstance(item, dict):
+                # Compact row formatting: Label=value, Label=value
+                parts = []
+                for k, v in item.items():
+                    parts.append(f"{_to_label(k)}={_format_number(k, v)}")
+                lines.append(", ".join(parts))
+            else:
+                lines.append(str(item))
+        return lines
+
+    # Scalar
+    return [str(answer)]
+
+
+@app.template_filter("pretty_answer")
+def pretty_answer_filter(answer: Any) -> List[str]:
+    """Jinja filter wrapper so templates can call: {{ item.answer | pretty_answer }}"""
+    return format_answer_lines(answer)
+
+
+def _default_json_candidates() -> list[str]:
+    return [
+        os.path.join("..", "module_2", "llm_extend_applicant_data_liv.json"),
+        os.path.join("..", "module_2", "llm_extend_applicant_data.json"),
+        os.path.join(".", "llm_extend_applicant_data_liv.json"),
+        os.path.join(".", "llm_extend_applicant_data.json"),
+    ]
+
+
+def _resolve_json_path() -> str:
+    env_path = os.environ.get("INSTRUCTOR_JSON_PATH", "").strip()
+    if env_path and os.path.exists(env_path):
+        return env_path
+
+    for candidate in _default_json_candidates():
+        if os.path.exists(candidate):
+            return candidate
+
+    return os.path.join("..", "module_2", "llm_extend_applicant_data_liv.json")
+
+
+def _pull_state() -> Dict[str, object]:
+    return {"is_pulling": _is_pulling, "last_log": _last_log}
+
+
+# -------------------------------------------------------------------
+# Routes
+# -------------------------------------------------------------------
 @app.get("/")
 def root():
-    return redirect(url_for("analysis"))
+    return redirect(url_for("analysis_page"))
 
 
 @app.get("/analysis")
-def analysis():
+def analysis_page():
     rows = get_analysis()
-    pull_state = _get_pull_state()
-    return render_template("analysis.html", rows=rows, pull_state=pull_state)
+    return render_template("analysis.html", rows=rows, pull_state=_pull_state())
 
 
 @app.get("/pull-status")
 def pull_status():
-    return jsonify(ok=True, **_get_pull_state())
-
-
-@app.post("/pull-data")
-def pull_data():
-    st = _get_pull_state()
-    if st["is_pulling"]:
-        msg = "Pull Data is already running. Please wait until it completes."
-        if _wants_json():
-            return jsonify(ok=False, error=msg, **st), 409
-        return redirect(url_for("analysis"))
-
-    _set_pull_state(True, log="Pull Data started…")
-    th = threading.Thread(target=_pull_job, daemon=True)
-    th.start()
-
-    if _wants_json():
-        return jsonify(ok=True, started=True, message="Pull Data started.", **_get_pull_state())
-    return redirect(url_for("analysis"))
+    return jsonify({"ok": True, **_pull_state()})
 
 
 @app.post("/update-analysis")
 def update_analysis():
-    st = _get_pull_state()
-    if st["is_pulling"]:
-        msg = "Update Analysis is disabled while Pull Data is running."
-        if _wants_json():
-            return jsonify(ok=False, error=msg, **st), 409
-        return redirect(url_for("analysis"))
+    if _is_pulling:
+        return jsonify(
+            {"ok": False, "error": "Pull Data is currently running, so Update Analysis is disabled right now."}
+        ), 409
 
-    start = time.time()
     _ = get_analysis()
-    elapsed = round(time.time() - start, 2)
+    return jsonify({"ok": True, "refresh": True, "log": "Analysis refreshed from the latest database contents."})
 
-    if _wants_json():
-        return jsonify(ok=True, refresh=True, log=f"Analysis recomputed in {elapsed:.2f}s.", **_get_pull_state())
-    return redirect(url_for("analysis"))
+
+def _run_pull_job(reset_table: bool) -> None:
+    global _is_pulling, _last_log
+    try:
+        json_path = _resolve_json_path()
+        if not os.path.exists(json_path):
+            _last_log = (
+                "I couldn't find the input JSON file.\n\n"
+                "Expected one of these:\n"
+                "- ../module_2/llm_extend_applicant_data_liv.json\n"
+                "- ../module_2/llm_extend_applicant_data.json\n\n"
+                "If your file is somewhere else, set INSTRUCTOR_JSON_PATH to its full path."
+            )
+            return
+
+        _last_log = f"Loading data from: {json_path}\n(reset={'yes' if reset_table else 'no'})\n"
+        n = load_json_to_db(json_path, reset=reset_table)
+        _last_log += f"\nDone. Loaded {n} records into PostgreSQL."
+    except Exception as e:
+        _last_log = f"Pull Data failed with an error:\n{e}"
+    finally:
+        _is_pulling = False
+
+
+@app.post("/pull-data")
+def pull_data():
+    global _is_pulling, _last_log
+
+    with _pull_lock:
+        if _is_pulling:
+            return jsonify({"ok": False, "error": "Pull Data is already running."}), 409
+
+        _is_pulling = True
+        _last_log = "Starting Pull Data…"
+
+        reset_table = request.args.get("reset", "1").strip().lower() not in {"0", "false", "no"}
+
+        t = threading.Thread(target=_run_pull_job, args=(reset_table,), daemon=True)
+        t.start()
+
+    return jsonify({"ok": True, "message": "Pull started. This page will update when it finishes."})
 
 
 @app.post("/update_analysis")

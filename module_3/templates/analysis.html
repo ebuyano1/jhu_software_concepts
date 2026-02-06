@@ -1,10 +1,15 @@
 <!--
-- Page to show SQL results from PostgreSQL.
-- Provide two required UI actions:
-  1) Pull Data: invoke Module 2 scrape + clean and upserts new rows into the PostgreSQL applicants table.
-  2) Update Analysis: re-do all SQL query answers and refreshes the page.
-- Update Analysis does nothing while Pull Data is running, the UI shows  this state and shows a friendly message to 
-end user.
+Module 3 — Analysis Page (Flask template)
+
+Goal:
+- Show the database-backed answers clearly and readably.
+- Provide the two required actions:
+  1) Pull Data
+  2) Update Analysis
+
+Important rule from the assignment:
+- Update Analysis must do nothing while Pull Data is running.
+  The UI enforces this by disabling Update Analysis and showing a clear message.
 -->
 
 <!doctype html>
@@ -15,17 +20,18 @@ end user.
   <title>Module 3 - Databases</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
+
 <body>
   <div class="container">
     <div class="header">
       <div class="title">
         <h1>Module 3 — Databases & Analysis Dashboard</h1>
         <p class="subtitle">
-          This page displays analysis results computed from my local PostgreSQL database.
+          Results below are computed from PostgreSQL using SQL queries in <code>query_data.py</code>.
         </p>
         <p class="subtitle" style="margin-top:6px;">
-          <strong>Pull Data</strong> runs the Module 2 scraper/cleaner and upserts any new results into the database.
-          <strong>Update Analysis</strong> recomputes the SQL answers (disabled while Pull Data is running).
+          <strong>Pull Data</strong> loads the source JSON into the database.
+          <strong>Update Analysis</strong> refreshes the answers (disabled while Pull Data is running).
         </p>
       </div>
 
@@ -65,11 +71,21 @@ end user.
                 <h3>{{ loop.index }}. {{ item.question }}</h3>
               </div>
 
+              <!--
+              Answer formatting:
+              - Some questions produce multiple values (e.g., several averages).
+                Those come back as a dict/list and are shown as labeled lines for readability.
+              -->
               <div class="answer">
-                {% if item.answer is mapping or (item.answer is sequence and item.answer is not string) %}
-                  <pre class="log" style="margin:10px 0 0;">{{ item.answer | tojson(indent=2) }}</pre>
+                {% set lines = item.answer | pretty_answer %}
+                {% if lines|length == 1 %}
+                  {{ lines[0] }}
                 {% else %}
-                  {{ item.answer }}
+                  <ul class="answer-list">
+                    {% for line in lines %}
+                      <li>{{ line }}</li>
+                    {% endfor %}
+                  </ul>
                 {% endif %}
               </div>
 
@@ -119,7 +135,7 @@ end user.
 
   async function refreshStatusOnce() {
     const resp = await fetch('/pull-status', { headers: { 'Accept': 'application/json' } });
-    const data = await resp.json();
+    const data = await resp.json().catch(() => ({}));
     if (!data || data.ok !== true) return;
 
     if (data.is_pulling) {
@@ -163,7 +179,7 @@ end user.
       const poll = setInterval(async () => {
         await refreshStatusOnce();
         const stResp = await fetch('/pull-status', { headers: { 'Accept': 'application/json' } });
-        const st = await stResp.json();
+        const st = await stResp.json().catch(() => ({}));
         if (st && st.ok === true && st.is_pulling === false) {
           clearInterval(poll);
           statusMeta.textContent = 'Done';
@@ -182,7 +198,7 @@ end user.
   }
 
   async function updateAnalysis() {
-    // First check status; if pulling, show user-friendly message
+    // First check status; if pulling, show a clear message and stop.
     await refreshStatusOnce();
     if (statusMeta.textContent.includes('Pulling')) {
       showLog('Update Analysis is disabled while Pull Data is running.');
@@ -218,7 +234,7 @@ end user.
   if (btnPull) btnPull.addEventListener('click', pullData);
   if (btnUpdate) btnUpdate.addEventListener('click', updateAnalysis);
 
-  // Initial status check (covers refresh while a pull is running)
+  // Initial status check (covers refreshing the page while a pull is running)
   refreshStatusOnce();
 </script>
 </body>
