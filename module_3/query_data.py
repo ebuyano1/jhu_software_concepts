@@ -113,7 +113,7 @@ def get_analysis() -> List[Dict[str, Any]]:
         "question": "Using original fields: How many CS PhD applicants were accepted to Georgetown, MIT, Stanford, or CMU in 2025?",
         "answer": f"{ans8} applicants",
         "sql": q8_sql,
-        "explanation": "Counts accepted CS PhDs at 4 specific schools using the raw 'university' field."
+        "explanation": "JUSTIFICATION: We used the 'date_added' field because the question asks for acceptances 'in 2025' (the calendar year the result was received), rather than 'for the term of 2025'. This distinguishes immediate results from future term starts."
     })
 
     # Q9
@@ -125,7 +125,7 @@ def get_analysis() -> List[Dict[str, Any]]:
         "question": "Using LLM fields: How many CS PhD applicants were accepted to Georgetown, MIT, Stanford, or CMU in 2025?",
         "answer": f"{ans9} applicants",
         "sql": q9_sql,
-        "explanation": "Same as Q8 but uses the standardized 'llm_generated_university' field to catch variations."
+        "explanation": "JUSTIFICATION: Same logic as Q8 (using 'date_added' for calendar year). We use the LLM-cleaned university names here to capture variations like 'Carnegie Mellon' vs 'CMU'."
     })
 
     # --- Extra Questions (10 & 11) ---

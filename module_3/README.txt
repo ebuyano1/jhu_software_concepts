@@ -46,9 +46,9 @@ All dependencies should be installed inside the active virtual environment (.ven
 Create a .env file (optional) or rely on the defaults in db.py:
 PGHOST=localhost
 PGPORT=5432
-PGUSER=postgres
-PGPASSWORD=password
-PGDATABASE=gradcafe
+PGUSER=postgres or module3_user
+PGPASSWORD=password or whichever password you select
+PGDATABASE=gradcafe or module3_db
 
 3) SQL 
 -----------------
@@ -69,7 +69,13 @@ db.py
 load_data.py
     Creates the applicants table and upserts cleaned GradCafe data.
     Handles data type conversion (Strings -> Floats/Dates) and 
-    URL-based ID extraction.
+    URL-based ID extraction. Defaults to looking for the JSON file 
+    in the local directory.
+
+scrape.py & clean.py
+    (Copied from Module 2 as per instructions)
+    The scraper scripts used by the "Pull Data" button to fetch new 
+    data locally within the module_3 environment.
 
 query_data.py
     Contains all 11 SQL queries (9 required + 2 extra). Prints console 
@@ -78,7 +84,7 @@ query_data.py
 app.py
     Flask application. Routes:
       - GET /analysis (The Dashboard)
-      - POST /pull-data (Background thread to reload DB)
+      - POST /pull-data (Background thread to reload DB using local scrape.py)
       - POST /update-analysis (Refreshes stats)
 
 templates/analysis.html

@@ -3,7 +3,7 @@ app.py — Module 3 Flask App (Database Queries + Analysis)
 
 Features:
 - /analysis: Displays the stylized dashboard.
-- /pull-data: Background thread to run scraping/loading (Module 2 + Module 3 load).
+- /pull-data: Background thread to run scraping/loading (Locally in module_3).
 - /update-analysis: Refreshes the SQL results.
 - Locking: Prevents 'Update Analysis' from running if 'Pull Data' is active.
 """
@@ -37,29 +37,33 @@ _last_status: str = "Ready"
 def _run_pull_job(reset_table: bool):
     global _is_pulling, _last_status
     try:
-        # Step 1: Run Module 2 Scraper (Optional - if you have the file)
-        # If you don't have scrape.py active yet, this part is skipped or can be commented out.
-        scrape_script = os.path.join("..", "module_2", "scrape.py")
+        # Step 1: Run Scraper (Locally in module_3 per professor instructions)
+        scrape_script = "scrape.py"  # Now looks in the same folder
+        
         if os.path.exists(scrape_script):
-            _last_status = "Scraping new data..."
+            _last_status = "Running scrape.py..."
+            # Run the script and capture output to avoid console clutter
             subprocess.run(["python", scrape_script], check=True)
+            _last_status = "Scraping complete. Loading data..."
+        else:
+            _last_status = "scrape.py not found. Loading existing JSON..."
         
         # Step 2: Load Data into DB
-        _last_status = "Loading data into PostgreSQL..."
-        # We assume the JSON file is in the module_2 folder or locally uploaded
+        # We assume scrape.py produces this file in the current folder
         json_path = "llm_extend_applicant_data_liv.json" 
         
-        # If running from a different directory, adjust path safely:
         if not os.path.exists(json_path):
-            # Fallback for common folder structures
+             # Fallback: check if it's still in the old location just in case
             candidate = os.path.join("..", "module_2", "llm_extend_applicant_data_liv.json")
             if os.path.exists(candidate):
                 json_path = candidate
 
-        # Run the loader
-        n = load_json_to_db(json_path, reset=reset_table)
-        _last_status = f"Success! Loaded {n} records."
-        
+        if os.path.exists(json_path):
+            n = load_json_to_db(json_path, reset=reset_table)
+            _last_status = f"Success! Loaded {n} records."
+        else:
+            _last_status = "Error: JSON data file not found."
+            
     except Exception as e:
         _last_status = f"Error: {str(e)}"
     finally:
