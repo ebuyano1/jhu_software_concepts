@@ -1,311 +1,177 @@
-"""
-This module is to query the applicants database to answer questions that are in requirements document
-
-To Run:
-python query_data.py
-
-This prints answers to console and exposes a get_analysis() function used by Flask
-
-Note:
-All database querying code is in one place so the Flask app can stay clean
-If something breaks with SQL execution,  only have to fix it here in one place
-"""
-
 from __future__ import annotations
-
 from typing import Any, Dict, List, Optional, Sequence, Union
-
 from db import get_cursor
 
-# psycopg2 supports:
-#   - positional params (tuple/list) with %s placeholders
-#   - named params (dict) with %(name)s placeholders
-#
-# IMPORTANT BUG FIXED:
-# If a query has no parameters, we should call cur.execute(sql) with ONE argument.
-# Passing an empty dict as the second argument can cause:
-#   TypeError: dict is not a sequence
-# depending on the SQL and psycopg2 expectations.
-Params = Optional[Union[Dict[str, Any], Sequence[Any]]]
-
-
-def _execute(cur, sql: str, params: Params = None) -> None:
-    """
-    Internal helper so we execute SQL correctly in one consistent place
-
-    note:
-    This wrapper exists because I hit a subtle psycopg2 behavior:
-    cur.execute(sql, {}) is NOT the same as cur.execute(sql) and it can crash
-    """
-    if params is None:
+def q_all(sql: str) -> List[Sequence[Any]]:
+    with get_cursor() as cur:
         cur.execute(sql)
-    else:
-        cur.execute(sql, params)
-
-
-def q_scalar(sql: str, params: Params = None) -> Any:
-    """
-    Run a query that returns a single scalar value (ex: COUNT(*), AVG(gpa), etc.).
-    Returns the first column of the first row, or None if no rows.
-    """
-    with get_cursor() as cur:
-        _execute(cur, sql, params)
-        row = cur.fetchone()
-        return row[0] if row else None
-
-
-def q_row(sql: str, params: Params = None):
-    """
-    Run a query that returns a single row.
-    Returns the row (tuple) or None if nothing returned.
-    """
-    with get_cursor() as cur:
-        _execute(cur, sql, params)
-        return cur.fetchone()
-
-
-def q_all(sql: str, params: Params = None):
-    """
-    Run a query that returns multiple rows.
-    Returns a list of rows (each row is a tuple).
-    """
-    with get_cursor() as cur:
-        _execute(cur, sql, params)
         return cur.fetchall()
 
-
-def pct(numer: float | int | None, denom: float | int | None) -> float | None:
-    """
-    Helper for percentage calculations.
-    Returns None if the numerator is None or denominator is None/0 to avoid
-    crashing and to make the output nicer in the UI.
-    """
-    if numer is None or denom in (None, 0):
-        return None
-    return round((float(numer) / float(denom)) * 100.0, 2)
-
+def format_percentage(value):
+    """Helper to add % sign if value exists"""
+    return f"{value}%" if value is not None else "0%"
 
 def get_analysis() -> List[Dict[str, Any]]:
-    """
-    Return list of dictionaries containing:
-      - question (string)
-      - answer (value or nested structure)
-      - sql (the query we used)
+    analysis = []
 
-    note:
-    I include the SQL in the output because the assignment page can show it and
-    it also makes debugging much easier.
-    """
-    analysis: List[Dict[str, Any]] = []
+    # --- Questions 1-9 (Required) ---
 
-    # 1) How many entries applied for Fall 2025?
-    sql1 = "SELECT COUNT(*) FROM applicants WHERE term ILIKE 'Fall 2025%';"
-    a1 = q_scalar(sql1)
-    analysis.append({"question": "How many entries applied for Fall 2025?", "answer": a1, "sql": sql1})
-
-    # 2) What percentage of entries are international students?
-    # (Definition per assignment: not American and not Other)
-    sql_total = "SELECT COUNT(*) FROM applicants;"
-    total = q_scalar(sql_total)
-
-    sql2 = """
-        SELECT COUNT(*)
-        FROM applicants
-        WHERE us_or_international IS NOT NULL
-          AND us_or_international NOT ILIKE 'American%'
-          AND us_or_international NOT ILIKE 'Other%';
-    """
-    intl = q_scalar(sql2)
-    a2 = pct(intl, total)
+    # Q1
+    q1_sql = "SELECT COUNT(*) FROM applicants WHERE term LIKE 'Fall 2025%';"
+    rows = q_all(q1_sql)
+    ans1 = rows[0][0] if rows else 0
     analysis.append({
-        "question": "What percentage of entries are international students (not American or Other)?",
-        "answer": f"{a2:.2f}%" if a2 is not None else "N/A",
-        "sql": sql2.strip()
+        "id": "q1",
+        "question": "How many total applications were submitted for the Fall 2025 term?",
+        "answer": f"{ans1} applications",
+        "sql": q1_sql,
+        "explanation": "Counts all rows where the term starts with 'Fall 2025'."
     })
 
-    # 3) Average GPA and GRE metrics for applicants who provide them
-    # note:
-    # We keep rows where ANY metric exists so we're not averaging over all-null records.
-    sql3 = """
-        SELECT
-            AVG(gpa)   AS avg_gpa,
-            AVG(gre)   AS avg_gre_q,
-            AVG(gre_v) AS avg_gre_v,
-            AVG(gre_aw) AS avg_gre_aw
-        FROM applicants
-        WHERE gpa IS NOT NULL
-           OR gre IS NOT NULL
-           OR gre_v IS NOT NULL
-           OR gre_aw IS NOT NULL;
-    """
-    r3 = q_row(sql3)
+    # Q2
+    q2_sql = "SELECT ROUND(100.0 * COUNT(*) / (SELECT COUNT(*) FROM applicants), 2) FROM applicants WHERE us_or_international NOT IN ('American', 'Other');"
+    rows = q_all(q2_sql)
+    ans2 = format_percentage(rows[0][0]) if rows else "0%"
     analysis.append({
-        "question": "What is the average GPA, GRE(Q), GRE V, GRE AW of applicants who provide these metrics?",
-        "answer": {
-            "avg_gpa": round(r3[0], 2) if r3 and r3[0] is not None else None,
-            "avg_gre_q": round(r3[1], 2) if r3 and r3[1] is not None else None,
-            "avg_gre_v": round(r3[2], 2) if r3 and r3[2] is not None else None,
-            "avg_gre_aw": round(r3[3], 2) if r3 and r3[3] is not None else None,
-        },
-        "sql": sql3.strip()
+        "id": "q2",
+        "question": "What percentage of all applicants are international (non-American)?",
+        "answer": ans2,
+        "sql": q2_sql,
+        "explanation": "Calculates the ratio of applicants who are not 'American' or 'Other' against the total count."
     })
 
-    # 4) Average GPA of American students in Fall 2025
-    sql4 = """
-        SELECT AVG(gpa)
-        FROM applicants
-        WHERE term ILIKE 'Fall 2025%'
-          AND us_or_international ILIKE 'American%'
-          AND gpa IS NOT NULL;
-    """
-    a4 = q_scalar(sql4)
+    # Q3
+    q3_sql = "SELECT ROUND(AVG(gpa)::numeric, 2), ROUND(AVG(gre)::numeric, 2), ROUND(AVG(gre_v)::numeric, 2), ROUND(AVG(gre_aw)::numeric, 2) FROM applicants;"
+    rows = q_all(q3_sql)
+    if rows and rows[0][0]:
+        gpa, gre, gre_v, gre_aw = rows[0]
+        ans3 = f"GPA: {gpa} | GRE Quant: {gre} | GRE Verbal: {gre_v} | GRE AW: {gre_aw}"
+    else:
+        ans3 = "No data available"
     analysis.append({
-        "question": "What is the average GPA of American students in Fall 2025?",
-        "answer": round(a4, 2) if a4 is not None else None,
-        "sql": sql4.strip()
+        "id": "q3",
+        "question": "What are the average GPA and GRE scores (Quant, Verbal, AW) across the entire dataset?",
+        "answer": ans3,
+        "sql": q3_sql,
+        "explanation": "Computes the average for GPA and all GRE sections, rounding to 2 decimal places."
     })
 
-    # 5) Percent of Fall 2025 entries that are acceptances
-    sql5_total = "SELECT COUNT(*) FROM applicants WHERE term ILIKE 'Fall 2025%';"
-    fall25_total = q_scalar(sql5_total)
-
-    sql5_acc = "SELECT COUNT(*) FROM applicants WHERE term ILIKE 'Fall 2025%' AND status ILIKE 'Accepted%';"
-    fall25_acc = q_scalar(sql5_acc)
-
-    a5 = pct(fall25_acc, fall25_total)
+    # Q4
+    q4_sql = "SELECT ROUND(AVG(gpa)::numeric, 2) FROM applicants WHERE us_or_international = 'American' AND term LIKE 'Fall 2025%';"
+    rows = q_all(q4_sql)
+    ans4 = rows[0][0] if rows and rows[0][0] else "No data"
     analysis.append({
-        "question": "What percent of Fall 2025 entries are acceptances?",
-        "answer": f"{a5:.2f}%" if a5 is not None else "N/A",
-        "sql": sql5_acc
+        "id": "q4",
+        "question": "What is the average GPA of American students who applied for Fall 2025?",
+        "answer": f"{ans4}",
+        "sql": q4_sql,
+        "explanation": "Filters for American students in Fall 2025 and averages their GPA."
     })
 
-    # 6) Average GPA of acceptances in Fall 2025
-    sql6 = """
-        SELECT AVG(gpa)
-        FROM applicants
-        WHERE term ILIKE 'Fall 2025%'
-          AND status ILIKE 'Accepted%'
-          AND gpa IS NOT NULL;
-    """
-    a6 = q_scalar(sql6)
+    # Q5
+    q5_sql = "SELECT ROUND(100.0 * COUNT(*) / NULLIF((SELECT COUNT(*) FROM applicants WHERE term LIKE 'Fall 2025%'), 0), 2) FROM applicants WHERE status = 'Accepted' AND term LIKE 'Fall 2025%';"
+    rows = q_all(q5_sql)
+    ans5 = format_percentage(rows[0][0]) if rows else "0%"
     analysis.append({
-        "question": "What is the average GPA of Fall 2025 acceptances?",
-        "answer": round(a6, 2) if a6 is not None else None,
-        "sql": sql6.strip()
+        "id": "q5",
+        "question": "What is the overall acceptance rate for the Fall 2025 term?",
+        "answer": ans5,
+        "sql": q5_sql,
+        "explanation": "Divides the number of 'Accepted' students by the total number of applicants for Fall 2025."
     })
 
-    # 7) JHU Masters in CS (based on raw program fields)
-    sql7 = """
-        SELECT COUNT(*)
-        FROM applicants
-        WHERE program ILIKE '%Johns Hopkins%'
-          AND degree ILIKE 'Master%'
-          AND program ILIKE '%Computer Science%';
-    """
-    a7 = q_scalar(sql7)
+    # Q6
+    q6_sql = "SELECT ROUND(AVG(gpa)::numeric, 2) FROM applicants WHERE status = 'Accepted' AND term LIKE 'Fall 2025%';"
+    rows = q_all(q6_sql)
+    ans6 = rows[0][0] if rows and rows[0][0] else "No data"
     analysis.append({
-        "question": "How many entries applied to JHU for a Masters in Computer Science?",
-        "answer": a7,
-        "sql": sql7.strip()
+        "id": "q6",
+        "question": "What is the average GPA of students who were accepted for Fall 2025?",
+        "answer": f"{ans6}",
+        "sql": q6_sql,
+        "explanation": "Averages the GPA only for students with 'Accepted' status in Fall 2025."
     })
 
-    # 8) 2025 acceptances for PhD CS at specific universities (raw fields)
-    sql8 = """
-        SELECT COUNT(*)
-        FROM applicants
-        WHERE date_added >= DATE '2025-01-01'
-          AND date_added <  DATE '2026-01-01'
-          AND status ILIKE 'Accepted%'
-          AND degree ILIKE 'PhD%'
-          AND program ILIKE '%Computer Science%'
-          AND (
-              program ILIKE '%Georgetown University%'
-              OR program ILIKE '%MIT%'
-              OR program ILIKE '%Massachusetts Institute of Technology%'
-              OR program ILIKE '%Stanford University%'
-              OR program ILIKE '%Carnegie Mellon University%'
-          );
-    """
-    a8 = q_scalar(sql8)
+    # Q7
+    q7_sql = "SELECT COUNT(*) FROM applicants WHERE (university ILIKE '%JHU%' OR university ILIKE '%Johns Hopkins%') AND degree = 'Masters' AND program ILIKE '%Computer Science%';"
+    rows = q_all(q7_sql)
+    ans7 = rows[0][0] if rows else 0
     analysis.append({
-        "question": "How many 2025 acceptances for PhD CS at Georgetown, MIT, Stanford, or CMU (raw fields)?",
-        "answer": a8,
-        "sql": sql8.strip()
+        "id": "q7",
+        "question": "How many applicants for a Masters in Computer Science applied to Johns Hopkins (JHU)?",
+        "answer": f"{ans7} applicants",
+        "sql": q7_sql,
+        "explanation": "Filters for JHU (using wildcards) and Masters CS programs."
     })
 
-    # 9) Same question but using LLM-generated standardized fields
-    sql9 = """
-        SELECT COUNT(*)
-        FROM applicants
-        WHERE date_added >= DATE '2025-01-01'
-          AND date_added <  DATE '2026-01-01'
-          AND status ILIKE 'Accepted%'
-          AND degree ILIKE 'PhD%'
-          AND llm_generated_program ILIKE '%Computer Science%'
-          AND llm_generated_university IN (
-              'Georgetown University',
-              'Massachusetts Institute of Technology',
-              'MIT',
-              'Stanford University',
-              'Carnegie Mellon University'
-          );
-    """
-    a9 = q_scalar(sql9)
+    # Q8
+    q8_sql = "SELECT COUNT(*) FROM applicants WHERE EXTRACT(YEAR FROM date_added) = 2025 AND status = 'Accepted' AND university IN ('Georgetown University', 'MIT', 'Stanford University', 'Carnegie Mellon University') AND degree = 'PhD' AND program ILIKE '%Computer Science%';"
+    rows = q_all(q8_sql)
+    ans8 = rows[0][0] if rows else 0
     analysis.append({
-        "question": "Do the numbers change if you use LLM-generated fields (Q8 vs Q9)?",
-        "answer": {"raw_fields": a8, "llm_fields": a9},
-        "sql": sql9.strip()
+        "id": "q8",
+        "question": "Using original fields: How many CS PhD applicants were accepted to Georgetown, MIT, Stanford, or CMU in 2025?",
+        "answer": f"{ans8} applicants",
+        "sql": q8_sql,
+        "explanation": "Counts accepted CS PhDs at 4 specific schools using the raw 'university' field."
     })
 
-    # 10) Two extra questions (these are meant to be editable / exploratory)
-
-    # Extra Q1: Top 10 universities (LLM standardized) for Fall 2025
-    sql10a = """
-        SELECT llm_generated_university, COUNT(*) AS n
-        FROM applicants
-        WHERE term ILIKE 'Fall 2025%'
-        GROUP BY llm_generated_university
-        ORDER BY n DESC
-        LIMIT 10;
-    """
-    top_unis = q_all(sql10a)
+    # Q9
+    q9_sql = "SELECT COUNT(*) FROM applicants WHERE EXTRACT(YEAR FROM date_added) = 2025 AND status = 'Accepted' AND llm_generated_university IN ('Georgetown University', 'MIT', 'Stanford University', 'Carnegie Mellon University') AND degree = 'PhD' AND llm_generated_program ILIKE '%Computer Science%';"
+    rows = q_all(q9_sql)
+    ans9 = rows[0][0] if rows else 0
     analysis.append({
-        "question": "Extra Q1: What are the top 10 universities (LLM standardized) people applied to for Fall 2025?",
-        "answer": [{"university": r[0], "count": r[1]} for r in top_unis],
-        "sql": sql10a.strip()
+        "id": "q9",
+        "question": "Using LLM fields: How many CS PhD applicants were accepted to Georgetown, MIT, Stanford, or CMU in 2025?",
+        "answer": f"{ans9} applicants",
+        "sql": q9_sql,
+        "explanation": "Same as Q8 but uses the standardized 'llm_generated_university' field to catch variations."
     })
 
-    # Extra Q2: Status breakdown for Fall 2025
-    sql10b = """
-        SELECT status, COUNT(*) AS n
-        FROM applicants
-        WHERE term ILIKE 'Fall 2025%'
-        GROUP BY status
-        ORDER BY n DESC;
-    """
-    statuses = q_all(sql10b)
+    # --- Extra Questions (10 & 11) ---
+
+    # Q10
+    q10_sql = "SELECT llm_generated_program, COUNT(*) as count FROM applicants GROUP BY 1 ORDER BY 2 DESC LIMIT 1;"
+    rows = q_all(q10_sql)
+    if rows:
+        prog, count = rows[0]
+        ans10 = f"{prog} ({count} applications)"
+    else:
+        ans10 = "No data"
     analysis.append({
-        "question": "Extra Q2: What is the breakdown of statuses for Fall 2025?",
-        "answer": [{"status": r[0], "count": r[1]} for r in statuses],
-        "sql": sql10b.strip()
+        "id": "q10",
+        "question": "Extra Q1: Which academic program has the highest volume of application entries?",
+        "answer": ans10,
+        "sql": q10_sql,
+        "explanation": "Groups by program name and sorts descending to find the most popular one."
+    })
+
+    # Q11
+    q11_sql = "SELECT degree, ROUND(AVG(gre)::numeric, 2) as avg_q FROM applicants WHERE degree IN ('PhD', 'Masters') GROUP BY 1;"
+    rows = q_all(q11_sql)
+    
+    # Format list into a readable string
+    if rows:
+        parts = []
+        for r in rows:
+            degree_name = r[0]
+            score = r[1]
+            parts.append(f"{degree_name}: {score}")
+        ans11 = " | ".join(parts)
+    else:
+        ans11 = "No data"
+
+    analysis.append({
+        "id": "q11",
+        "question": "Extra Q2: How does the average GRE Quantitative score compare between PhD and Masters applicants?",
+        "answer": ans11,
+        "sql": q11_sql,
+        "explanation": "Groups by degree type to compare average GRE scores side-by-side."
     })
 
     return analysis
 
-
-def main() -> None:
-    """
-    Console runner so we can quickly verify answers without Flask.
-    note: This helped me debug SQL before wiring into the webpage.
-    """
-    rows = get_analysis()
-    print("\n--- Module 3 Query Answers ---\n")
-    for i, item in enumerate(rows, start=1):
-        print(f"Q{i}: {item['question']}")
-        print(f"Answer: {item['answer']}")
-        print(f"SQL: {item['sql']}")
-        print("-" * 60)
-
-
 if __name__ == "__main__":
-    main()
+    for item in get_analysis():
+        print(f"Q: {item['question']}")
+        print(f"A: {item['answer']}\n")

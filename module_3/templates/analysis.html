@@ -1,241 +1,131 @@
-<!--
-Module 3 — Analysis Page (Flask template)
-
-Goal:
-- Show the database-backed answers clearly and readably.
-- Provide the two required actions:
-  1) Pull Data
-  2) Update Analysis
-
-Important rule from the assignment:
-- Update Analysis must do nothing while Pull Data is running.
-  The UI enforces this by disabling Update Analysis and showing a clear message.
--->
-
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Module 3 - Databases</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Module 3: Graduate Admissions Analytics</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
-
 <body>
-  <div class="container">
-    <div class="header">
-      <div class="title">
-        <h1>Module 3 — Databases & Analysis Dashboard</h1>
-        <p class="subtitle">
-          Results below are computed from PostgreSQL using SQL queries in <code>query_data.py</code>.
-        </p>
-        <p class="subtitle" style="margin-top:6px;">
-          <strong>Pull Data</strong> loads the source JSON into the database.
-          <strong>Update Analysis</strong> refreshes the answers (disabled while Pull Data is running).
-        </p>
-      </div>
 
-      <div class="actions">
-        <button id="btnPull" class="btn btn-primary" type="button">Pull Data</button>
-        <button id="btnUpdate" class="btn btn-secondary" type="button">Update Analysis</button>
-      </div>
-    </div>
+<div class="container">
+    <header>
+        <div>
+            <h1>Admissions Analytics Dashboard</h1>
+            <div class="subtitle">Live PostgreSQL Data Analysis</div>
+        </div>
+        
+        <div class="controls">
+            <span id="status-display">{{ last_status }}</span>
+            
+            <button id="btnPull" class="btn-pull" onclick="startPull()">
+                Pull Data
+            </button>
+            
+            <button id="btnUpdate" class="btn-update" onclick="updateAnalysis()">
+                Update Analysis
+            </button>
+        </div>
+    </header>
 
-    <div class="card">
-      <div class="card-body">
-        <div class="status">
-          <div class="left">
-            <div class="label">Status</div>
-            <div class="message" id="statusMsg">
-              {% if pull_state and pull_state.is_pulling %}
-                Pull Data is running…
-              {% else %}
-                Ready.
-              {% endif %}
+    <div id="results-area">
+        {% for item in analysis %}
+        <div class="result-card">
+            <div class="question">Q{{ loop.index }}: {{ item.question }}</div>
+            
+            <div class="answer-box">
+                {{ item.answer }}
             </div>
-          </div>
-          <div class="pill" id="statusMeta">
-            {% if pull_state and pull_state.is_pulling %}Pulling…{% else %}Idle{% endif %}
-          </div>
+
+            <details>
+                <summary>View SQL & Logic</summary>
+                <div class="logic-text"><strong>Logic:</strong> {{ item.explanation }}</div>
+                <code>{{ item.sql }}</code>
+            </details>
         </div>
-
-        <div style="margin-top:12px; {% if pull_state and pull_state.last_log %}display:block;{% else %}display:none;{% endif %}" id="logWrap">
-          <div class="label" style="margin:8px 0;">Output</div>
-          <div class="log" id="logBox">{% if pull_state and pull_state.last_log %}{{ pull_state.last_log }}{% endif %}</div>
-        </div>
-
-        <div class="grid" style="margin-top: 18px;">
-          {% for item in rows %}
-            <div class="qcard">
-              <div class="qtitle">
-                <h3>{{ loop.index }}. {{ item.question }}</h3>
-              </div>
-
-              <!--
-              Answer formatting:
-              - Some questions produce multiple values (e.g., several averages).
-                Those come back as a dict/list and are shown as labeled lines for readability.
-              -->
-              <div class="answer">
-                {% set lines = item.answer | pretty_answer %}
-                {% if lines|length == 1 %}
-                  {{ lines[0] }}
-                {% else %}
-                  <ul class="answer-list">
-                    {% for line in lines %}
-                      <li>{{ line }}</li>
-                    {% endfor %}
-                  </ul>
-                {% endif %}
-              </div>
-
-              <div class="sql-toggle" data-target="sql{{ loop.index }}">Show SQL</div>
-              <div class="sql" id="sql{{ loop.index }}">{{ item.sql }}</div>
-            </div>
-          {% endfor %}
-        </div>
-      </div>
+        {% endfor %}
     </div>
-  </div>
+</div>
 
 <script>
-  // Toggle SQL visibility
-  document.querySelectorAll('.sql-toggle').forEach(t => {
-    t.addEventListener('click', () => {
-      const id = t.getAttribute('data-target');
-      const el = document.getElementById(id);
-      el.classList.toggle('show');
-      t.textContent = el.classList.contains('show') ? 'Hide SQL' : 'Show SQL';
-    });
-  });
+    // --- Frontend Logic ---
 
-  const btnPull = document.getElementById('btnPull');
-  const btnUpdate = document.getElementById('btnUpdate');
-  const statusMsg = document.getElementById('statusMsg');
-  const statusMeta = document.getElementById('statusMeta');
-  const logWrap = document.getElementById('logWrap');
-  const logBox = document.getElementById('logBox');
+    async function startPull() {
+        const btnPull = document.getElementById('btnPull');
+        const btnUpdate = document.getElementById('btnUpdate');
+        const statusSpan = document.getElementById('status-display');
 
-  function showLog(text) {
-    const s = (text === undefined || text === null) ? '' : String(text);
-    if (s.trim().length > 0) {
-      logWrap.style.display = 'block';
-      logBox.textContent = s;
-    } else {
-      logWrap.style.display = 'none';
-      logBox.textContent = '';
-    }
-  }
+        // UI Updates
+        btnPull.disabled = true;
+        btnUpdate.disabled = true; // Constraint: Disable update while pulling
+        statusSpan.innerText = "Requesting scrape job...";
 
-  async function postJson(url) {
-    const resp = await fetch(url, { method: 'POST', headers: { 'Accept': 'application/json' } });
-    const data = await resp.json().catch(() => ({}));
-    return { resp, data };
-  }
-
-  async function refreshStatusOnce() {
-    const resp = await fetch('/pull-status', { headers: { 'Accept': 'application/json' } });
-    const data = await resp.json().catch(() => ({}));
-    if (!data || data.ok !== true) return;
-
-    if (data.is_pulling) {
-      statusMeta.textContent = 'Pulling…';
-      statusMsg.textContent = 'Pull Data is running…';
-      btnPull.disabled = true;
-      btnUpdate.disabled = true;
-    } else {
-      statusMeta.textContent = 'Idle';
-      statusMsg.textContent = 'Ready.';
-      btnPull.disabled = false;
-      btnUpdate.disabled = false;
-    }
-
-    if (data.last_log) showLog(data.last_log);
-  }
-
-  async function pullData() {
-    statusMeta.textContent = 'Working…';
-    statusMsg.textContent = 'Starting Pull Data…';
-    btnPull.disabled = true;
-    btnUpdate.disabled = true;
-    showLog('');
-
-    try {
-      const { resp, data } = await postJson('/pull-data');
-      if (!resp.ok || data.ok === false) {
-        statusMeta.textContent = 'Error';
-        statusMsg.textContent = 'Pull Data failed.';
-        showLog(data.error || 'Unknown error.');
-        btnPull.disabled = false;
-        btnUpdate.disabled = false;
-        return;
-      }
-
-      statusMeta.textContent = 'Pulling…';
-      statusMsg.textContent = 'Pull Data is running…';
-      showLog(data.message || 'Pull started.');
-
-      // Poll status until finished, then refresh page
-      const poll = setInterval(async () => {
-        await refreshStatusOnce();
-        const stResp = await fetch('/pull-status', { headers: { 'Accept': 'application/json' } });
-        const st = await stResp.json().catch(() => ({}));
-        if (st && st.ok === true && st.is_pulling === false) {
-          clearInterval(poll);
-          statusMeta.textContent = 'Done';
-          statusMsg.textContent = 'Pull complete. Refreshing…';
-          window.location.reload();
+        try {
+            // We request a reset=1 to ensure the table matches our specific schema
+            const response = await fetch('/pull-data?reset=1', { method: 'POST' });
+            const data = await response.json();
+            
+            if (response.status === 409) {
+                statusSpan.innerText = "Job already running!";
+            } else {
+                statusSpan.innerText = "Job started. Please wait...";
+                // Start polling for status
+                pollStatus();
+            }
+        } catch (err) {
+            statusSpan.innerText = "Error starting job.";
+            btnPull.disabled = false;
+            btnUpdate.disabled = false;
         }
-      }, 1200);
-
-    } catch (e) {
-      statusMeta.textContent = 'Error';
-      statusMsg.textContent = 'Pull Data failed.';
-      showLog(String(e));
-      btnPull.disabled = false;
-      btnUpdate.disabled = false;
-    }
-  }
-
-  async function updateAnalysis() {
-    // First check status; if pulling, show a clear message and stop.
-    await refreshStatusOnce();
-    if (statusMeta.textContent.includes('Pulling')) {
-      showLog('Update Analysis is disabled while Pull Data is running.');
-      return;
     }
 
-    statusMeta.textContent = 'Working…';
-    statusMsg.textContent = 'Recomputing analysis…';
-    btnUpdate.disabled = true;
+    async function updateAnalysis() {
+        const btnUpdate = document.getElementById('btnUpdate');
+        const statusSpan = document.getElementById('status-display');
 
-    try {
-      const { resp, data } = await postJson('/update-analysis');
-      if (!resp.ok || data.ok === false) {
-        statusMeta.textContent = 'Error';
-        statusMsg.textContent = 'Update failed.';
-        showLog(data.error || 'Unknown error.');
-        btnUpdate.disabled = false;
-        return;
-      }
+        // Client-side check
+        if (document.getElementById('btnPull').disabled) {
+            alert("Cannot update while Pull Data is running.");
+            return;
+        }
 
-      statusMeta.textContent = 'Done';
-      statusMsg.textContent = 'Analysis updated. Refreshing…';
-      if (data.log) showLog(data.log);
-      if (data.refresh === true) window.location.reload();
-    } catch (e) {
-      statusMeta.textContent = 'Error';
-      statusMsg.textContent = 'Update failed.';
-      showLog(String(e));
-      btnUpdate.disabled = false;
+        btnUpdate.innerText = "Refreshing...";
+        statusSpan.innerText = "Fetching latest data...";
+
+        try {
+            const response = await fetch('/update-analysis', { method: 'POST' });
+            if (response.status === 409) {
+                alert("Cannot update: Pull Data is currently running.");
+                statusSpan.innerText = "Update blocked: Pulling data.";
+            } else {
+                // Reload page to render new Jinja data
+                window.location.reload();
+            }
+        } catch (err) {
+            statusSpan.innerText = "Error updating.";
+        } finally {
+            btnUpdate.innerText = "Update Analysis";
+        }
     }
-  }
 
-  if (btnPull) btnPull.addEventListener('click', pullData);
-  if (btnUpdate) btnUpdate.addEventListener('click', updateAnalysis);
+    // Poll status every 2 seconds if a job is running
+    async function pollStatus() {
+        const interval = setInterval(async () => {
+            const res = await fetch('/status');
+            const data = await res.json();
+            
+            document.getElementById('status-display').innerText = data.status;
 
-  // Initial status check (covers refreshing the page while a pull is running)
-  refreshStatusOnce();
+            if (!data.pulling) {
+                // Job finished
+                clearInterval(interval);
+                document.getElementById('btnPull').disabled = false;
+                document.getElementById('btnUpdate').disabled = false;
+                alert("Data Pull Complete! You can now Update Analysis.");
+            }
+        }, 2000);
+    }
 </script>
+
 </body>
 </html>

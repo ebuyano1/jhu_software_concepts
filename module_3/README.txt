@@ -1,159 +1,111 @@
-Module 3 — Database Queries & Flask Analysis
-================================================
+Module 3 — Database Queries + Flask Analysis with help of AI
+=====================================================================
 
-Overview
-------------------------------------------------
-This project completes the requirements for Module 3: Database Queries. It loads
-GradCafe application data from JSON into a PostgreSQL database, answers the required
-analytical questions using SQL, and presents the results through a dynamic Flask
-web application.
+This folder contains my Module 3 solution. It connects a PostgreSQL database
+to a Flask web application and runs analytical SQL queries against GradCafe
+application data.
 
-Based on feedback from the instructor on Module 2 data quality, this module uses
-the instructor-provided dataset for analysis to ensure correctness,
-consistency, and reproducibility of results.
+Project flow
+------------
+1) Load cleaned GradCafe data into PostgreSQL (automatically via app or load_data.py)
+2) Run analytical SQL queries (query_data.py)
+3) Render the analysis results on a Flask webpage (app.py)
+4) Generate a PDF report of the findings (generate_answers_pdf.py)
 
-------------------------------------------------
-Assignment Objectives
-------------------------------------------------
-This submission meets all stated Module 3 requirements:
+NOTE:
+- This Flask app includes the required "Pull Data" and "Update Analysis" buttons.
+- "Pull Data" runs in a background thread to allow the UI to remain responsive.
 
-- Load application data into PostgreSQL using psycopg2
-- Store the data in a single relational table with a defined schema
-- Answer required analytical questions using SQL queries
-- Display results dynamically on a Flask webpage
-- Provide interactive controls to:
-  - Pull Data into the database
-  - Update Analysis results
-- Generate a PDF report of all answers and SQL queries
-- Document limitations of anonymous, self-reported data
-- Commit all required deliverables to GitHub
 
-------------------------------------------------
-Database Design
-------------------------------------------------
-The project uses a single PostgreSQL table named applicants with the following
-columns:
+------------------------------------------------------------
+0) Prerequisites
+------------------------------------------------------------
+- Python 3.10+
+- PostgreSQL installed and running locally
+- Module 2 completed (BeautifulSoup is included as a dependency because the overall project depends on Module 2’s output)
+  (llm_extend_applicant_data_liv.json)
 
-- p_id (integer, primary key)
-- program (text)
-- comments (text)
-- date_added (date)
-- url (text)
-- status (text)
-- term (text)
-- us_or_international (text)
-- gpa (float)
-- gre (float)
-- gre_v (float)
-- gre_aw (float)
-- degree (text)
-- llm_generated_program (text)
-- llm_generated_university (text)
-
-------------------------------------------------
-Environment Setup
-------------------------------------------------
-1. Install dependencies from the `module_3` directory:
+------------------------------------------------------------
+1) Install dependencies
+------------------------------------------------------------
+From the module_3 directory, run:
 
     pip install -r requirements.txt
 
-2. Configure the PostgreSQL connection using an environment variable:
+This installs:
+- Flask (web application)
+- psycopg2-binary (PostgreSQL driver)
+- python-dotenv (for loading DATABASE_URL from a .env file)
+- beautifulsoup4 (used by Module 2 during scraping)
+- reportlab (used for generating the PDF report)
 
-    (PowerShell)
-    $env:DATABASE_URL="postgresql://USERNAME:PASSWORD@localhost:5432/DATABASE_NAME"
+All dependencies should be installed inside the active virtual environment (.venv).
 
-------------------------------------------------
-Loading Data into PostgreSQL
-------------------------------------------------
-Data is loaded using `load_data.py`. To load the instructor provided dataset and
-reset the database table:
+2) Configuration
+-----------------
+Create a .env file (optional) or rely on the defaults in db.py:
+PGHOST=localhost
+PGPORT=5432
+PGUSER=postgres
+PGPASSWORD=password
+PGDATABASE=gradcafe
 
-    python load_data.py --json ../module_2/llm_extend_applicant_data_liv.json --reset
+3) SQL 
+-----------------
+All SQL execution is centralized in query_data.py, with helper functions that:
+- Safely execute parameterized queries
+- Keep database logic separate from Flask route logic
+- Make it easy to reproduce results both in the console and in the Flask app
+- Format answers into human-readable strings (e.g., adding % signs)
 
-This script:
-- Creates the applicants table if it does not already exist
-- Clears existing records when `--reset` is used
-- Inserts the dataset into PostgreSQL in a repeatable way
 
-------------------------------------------------
-SQL Analysis
-------------------------------------------------
-All required analytical questions are implemented in `query_data.py`, including:
+------------------------------------------------------------
+Files overview
+------------------------------------------------------------
 
-1. Number of Fall 2025 applications
-2. Percentage of international applicants
-3. Average GPA and GRE metrics
-4. Average GPA for American applicants (Fall 2025)
-5. Acceptance rate for Fall 2025
-6. Additional required and exploratory questions
+db.py
+    PostgreSQL connection helpers and context managers
 
-To run the analysis directly in the console:
+load_data.py
+    Creates the applicants table and upserts cleaned GradCafe data.
+    Handles data type conversion (Strings -> Floats/Dates) and 
+    URL-based ID extraction.
 
-    python query_data.py
+query_data.py
+    Contains all 11 SQL queries (9 required + 2 extra). Prints console 
+    answers and exposes get_analysis() for the Flask app.
 
-------------------------------------------------
-Flask Web Application
-------------------------------------------------
-Start the Flask application:
+app.py
+    Flask application. Routes:
+      - GET /analysis (The Dashboard)
+      - POST /pull-data (Background thread to reload DB)
+      - POST /update-analysis (Refreshes stats)
 
-    python app.py
+templates/analysis.html
+    HTML template for rendering analysis results. Includes JavaScript 
+    logic to disable buttons while data is pulling.
 
-Then open:
+static/styles.css
+    UI Styling for the analysis webpage (clean, modern CSS).
 
-    http://localhost:5000/analysis
+generate_answers_pdf.py
+    Generates 'module3_analysis.pdf' containing all questions, 
+    answers, logic, and SQL code for submission.
 
-The web interface:
-- Displays each question with its computed answer
-- Allows SQL queries to be toggled for transparency
-- Includes two interactive buttons:
-  - **Pull Data**: loads the JSON dataset into PostgreSQL in the background
-  - **Update Analysis**: refreshes results from the database
+limitations.pdf
+    Essay on the inherent limitations of anonymous/self-reported data.
 
-As required, Update Analysis is disabled while Pull Data is running.
+llm_extend_applicant_data_liv.json
+    The source data file used to populate the database.
 
-------------------------------------------------
-PDF Answers Report
-------------------------------------------------
-A formatted PDF containing all required answers is generated using:
 
-    python generate_answers_pdf.py
-
-This produces:
-
-    answers_report.pdf
-
-The PDF includes:
-- Each question
-- The computed answer
-- The SQL query used
-- A short explanation of why the query answers the question
-
-------------------------------------------------
-Limitations of the Data
-------------------------------------------------
-A written discussion of the limitations of using anonymous, self-reported data
-from GradCafe is provided in:
-
-    limitations.pdf
-
-------------------------------------------------
-Deliverables Checklist
-------------------------------------------------
-This repository includes:
-
-- PostgreSQL-backed analysis
-- load_data.py
-- query_data.py
-- Flask web application
-- Pull Data and Update Analysis controls
-- answers_report.pdf
-- limitations.pdf
-- Screenshots of console output and the running webpage
-- README.txt
-- requirements.txt
-
-------------------------------------------------
-Notes
-------------------------------------------------
-The project was developed and tested locally using Python 3.11 and PostgreSQL.
-All scripts are rerunnable, and the database can be safely refreshed as needed.
+------------------------------------------------------------
+Summary
+------------------------------------------------------------
+This project shows:
+- End to end integration of PostgreSQL with Python and Flask
+- Repeatable load and insertion of JSON data into a database relational table
+- Analytical SQL queries over real scraped data
+- Dynamic rendering of answers + SQL in a web dashboard
+- Concurrency control (threading) to manage long-running data pulls
+- Automated PDF report generation
