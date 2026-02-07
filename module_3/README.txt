@@ -63,6 +63,10 @@ All SQL execution is centralized in query_data.py, with helper functions that:
 Files overview
 ------------------------------------------------------------
 
+llm_hosting/
+    (Copied from Module 2)
+    Folder containing the LLM logic required by clean.py.
+    
 db.py
     PostgreSQL connection helpers and context managers
 

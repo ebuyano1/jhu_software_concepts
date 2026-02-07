@@ -3,7 +3,7 @@ app.py — Module 3 Flask App (Database Queries + Analysis)
 
 Features:
 - /analysis: Displays the stylized dashboard.
-- /pull-data: Background thread to run scraping/loading (Locally in module_3).
+- /pull-data: Background thread to run Scrape -> Clean -> Load.
 - /update-analysis: Refreshes the SQL results.
 - Locking: Prevents 'Update Analysis' from running if 'Pull Data' is active.
 """
@@ -37,32 +37,39 @@ _last_status: str = "Ready"
 def _run_pull_job(reset_table: bool):
     global _is_pulling, _last_status
     try:
-        # Step 1: Run Scraper (Locally in module_3 per professor instructions)
-        scrape_script = "scrape.py"  # Now looks in the same folder
-        
+        # --- STEP 1: SCRAPE ---
+        scrape_script = "scrape.py"
         if os.path.exists(scrape_script):
-            _last_status = "Running scrape.py..."
-            # Run the script and capture output to avoid console clutter
+            _last_status = "Step 1/3: Scraping new data..."
             subprocess.run(["python", scrape_script], check=True)
-            _last_status = "Scraping complete. Loading data..."
         else:
-            _last_status = "scrape.py not found. Loading existing JSON..."
+            _last_status = "Warning: scrape.py not found. Skipping scrape."
+
+        # --- STEP 2: CLEAN (LLM) ---
+        clean_script = "clean.py"
+        # The scraper typically outputs 'applicant_data.json'
+        # The cleaner typically outputs 'llm_extend_applicant_data.json'
+        if os.path.exists(clean_script):
+            _last_status = "Step 2/3: Cleaning data with LLM..."
+            subprocess.run(["python", clean_script], check=True)
+        else:
+            _last_status = "Warning: clean.py not found. Skipping clean."
         
-        # Step 2: Load Data into DB
-        # We assume scrape.py produces this file in the current folder
-        json_path = "llm_extend_applicant_data_liv.json" 
+        # --- STEP 3: LOAD INTO DB ---
+        _last_status = "Step 3/3: Loading data into PostgreSQL..."
         
+        # Priority 1: The output from clean.py (freshly made)
+        json_path = "llm_extend_applicant_data.json" 
+        
+        # Priority 2: The original provided file (fallback)
         if not os.path.exists(json_path):
-             # Fallback: check if it's still in the old location just in case
-            candidate = os.path.join("..", "module_2", "llm_extend_applicant_data_liv.json")
-            if os.path.exists(candidate):
-                json_path = candidate
+             json_path = "llm_extend_applicant_data_liv.json"
 
         if os.path.exists(json_path):
             n = load_json_to_db(json_path, reset=reset_table)
-            _last_status = f"Success! Loaded {n} records."
+            _last_status = f"Success! Pipeline complete. Loaded {n} records."
         else:
-            _last_status = "Error: JSON data file not found."
+            _last_status = "Error: No JSON data file found (checked new and old)."
             
     except Exception as e:
         _last_status = f"Error: {str(e)}"
@@ -111,17 +118,13 @@ def pull_data():
 
 @app.route("/update-analysis", methods=["POST"])
 def update_analysis():
-    """
-    Refreshes the data. 
-    Fails if a pull is currently running (Constraint Check).
-    """
+    """Refreshes the data."""
     if _is_pulling:
         return jsonify({
             "ok": False, 
             "msg": "Cannot update while Pull Data is running."
         }), 409
 
-    # Re-fetch analysis to ensure we have the latest
     data = get_analysis()
     return jsonify({"ok": True, "data": data, "status": _last_status})
 
