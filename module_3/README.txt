@@ -109,6 +109,9 @@ limitations.pdf
 llm_extend_applicant_data_liv.json
     The source data file used to populate the database.
 
+screenshots/
+ - console_output.png - Showing the console with SQL results
+ - flask_webpage.png - Showing the Flask web page with results of SQL queries and buttons to pull data
 
 ------------------------------------------------------------
 Summary
