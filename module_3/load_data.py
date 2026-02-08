@@ -94,7 +94,7 @@ def normalize_row(r: Dict[str, Any]) -> Dict[str, Any]:
 
     # 2. Parse Date (e.g. "20 Feb 2025" or similar)
     # The JSON usually has dates like "15 Feb 2026". We try standard formats.
-    # Note: If your JSON has "February 01, 2026", adjust the format string.
+    # Note: If JSON has "February 01, 2026", adjust the format string.
     raw_date = r.get("date_added")
     formatted_date = None
     if raw_date:

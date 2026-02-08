@@ -1,3 +1,6 @@
+# This is used to query the data and has all of the SQL commands and explanation/logic loaded into List
+#
+
 from __future__ import annotations
 from typing import Any, Dict, List, Optional, Sequence, Union
 from db import get_cursor
