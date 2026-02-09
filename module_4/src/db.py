@@ -18,10 +18,12 @@ def get_db_dsn(env_overrides=None) -> str:
     if env_overrides:
         env.update(env_overrides)
 
+    # If no overrides are provided, prioritize the global DATABASE_URL
     dsn = env.get("DATABASE_URL")
-    if dsn:
+    if dsn and not env_overrides:
         return dsn
 
+    # If overrides exist OR DATABASE_URL is missing, build DSN manually
     host = env.get("PGHOST", "localhost")
     port = env.get("PGPORT", "5432")
     user = env.get("PGUSER", "postgres")
