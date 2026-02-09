@@ -20,23 +20,29 @@ TEST_DB_NAME = "gradcafe_test"
 
 @pytest.fixture(scope="session")
 def test_db():
-    # 1. Connect to 'postgres' maintenance database
-    default_dsn = get_db_dsn(env_overrides={"PGDATABASE": "postgres"})
-    conn = psycopg2.connect(default_dsn)
+    # 1. Manually build maintenance DSN to ensure we are NOT in gradcafe_test
+    # This addresses the Git helper's concern about get_db_dsn overrides.
+    user = os.getenv("PGUSER", "postgres")
+    password = os.getenv("PGPASSWORD", "password")
+    host = os.getenv("PGHOST", "localhost")
+    port = os.getenv("PGPORT", "5432")
+    maintenance_dsn = f"dbname=postgres user={user} password={password} host={host} port={port}"
+    
+    conn = psycopg2.connect(maintenance_dsn)
     conn.set_isolation_level(psycopg2.extensions.ISOLATION_LEVEL_AUTOCOMMIT)
     cur = conn.cursor()
     
-    # 2. Heavy-Duty Retry Loop with Connection Polling
+    # 2. Aggressive Cleanup Loop
     for i in range(10):
         try:
-            # Terminate connections to the target DB
+            # Forcibly terminate all other connections to the target DB
             cur.execute("""
                 SELECT pg_terminate_backend(pid) 
                 FROM pg_stat_activity 
                 WHERE datname = %s AND pid <> pg_backend_pid();
             """, (TEST_DB_NAME,))
             
-            # Polling: Wait for connection count to hit zero before dropping
+            # Polling: Wait up to 10 seconds for connections to clear
             for _ in range(5):
                 cur.execute("SELECT COUNT(*) FROM pg_stat_activity WHERE datname = %s;", (TEST_DB_NAME,))
                 if cur.fetchone()[0] == 0:
@@ -48,15 +54,15 @@ def test_db():
             break 
         except psycopg2.errors.ObjectInUse:
             if i == 9: raise 
-            time.sleep(5) # Final wait for CI latency
+            time.sleep(5) # Final buffer for CI latency
             
     # 3. Recreate the database
     cur.execute(f"CREATE DATABASE {TEST_DB_NAME};")
     cur.close()
     conn.close()
     
-    # Use yield to keep DB alive for all tests
-    yield get_db_dsn(env_overrides={"PGDATABASE": TEST_DB_NAME})
+    # Return the correct test DSN for the rest of the suite
+    return f"dbname={TEST_DB_NAME} user={user} password={password} host={host} port={port}"
 
 @pytest.fixture(scope="function")
 def db_cursor(test_db, mocker):
