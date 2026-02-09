@@ -11,7 +11,7 @@
 <div class="container">
     <header>
         <div>
-            <h1>Admissions Analytics Dashboard</h1>
+            <h1>Module 3: Graduate Admissions Analytics</h1>
             <div class="subtitle">Live PostgreSQL Data Analysis</div>
         </div>
         
@@ -34,13 +34,13 @@
             <div class="question">Q{{ loop.index }}: {{ item.question }}</div>
             
             <div class="answer-box">
-                {{ item.answer }}
+                Answer: {{ item.answer }}
             </div>
 
             <details>
                 <summary>View SQL & Logic</summary>
                 <div class="logic-text"><strong>Logic:</strong> {{ item.explanation }}</div>
-                <code>{{ item.sql }}</code>
+                <div class="sql-code">{{ item.sql }}</div>
             </details>
         </div>
         {% endfor %}
@@ -48,28 +48,31 @@
 </div>
 
 <script>
-    // --- Frontend Logic ---
+    const btnPull = document.getElementById('btnPull');
+    const btnUpdate = document.getElementById('btnUpdate');
+    const statusSpan = document.getElementById('status-display');
+
+    // If server says we are pulling, disable buttons immediately
+    const isPulling = {{ 'true' if is_pulling else 'false' }};
+    if (isPulling) {
+        btnPull.disabled = true;
+        btnUpdate.disabled = true;
+        pollStatus();
+    }
 
     async function startPull() {
-        const btnPull = document.getElementById('btnPull');
-        const btnUpdate = document.getElementById('btnUpdate');
-        const statusSpan = document.getElementById('status-display');
-
-        // UI Updates
         btnPull.disabled = true;
-        btnUpdate.disabled = true; // Constraint: Disable update while pulling
-        statusSpan.innerText = "Requesting scrape job...";
-
+        btnUpdate.disabled = true;
+        statusSpan.innerText = "Requesting pull...";
+        
         try {
-            // We request a reset=1 to ensure the table matches our specific schema
-            const response = await fetch('/pull-data?reset=1', { method: 'POST' });
+            const response = await fetch('/pull-data', { method: 'POST' });
             const data = await response.json();
             
             if (response.status === 409) {
-                statusSpan.innerText = "Job already running!";
+                alert("Job already running!");
             } else {
-                statusSpan.innerText = "Job started. Please wait...";
-                // Start polling for status
+                statusSpan.innerText = "Job started...";
                 pollStatus();
             }
         } catch (err) {
@@ -80,11 +83,7 @@
     }
 
     async function updateAnalysis() {
-        const btnUpdate = document.getElementById('btnUpdate');
-        const statusSpan = document.getElementById('status-display');
-
-        // Client-side check
-        if (document.getElementById('btnPull').disabled) {
+        if (btnPull.disabled) {
             alert("Cannot update while Pull Data is running.");
             return;
         }

@@ -31,8 +31,16 @@ def get_analysis() -> List[Dict[str, Any]]:
         "explanation": "Counts all rows where the term starts with 'Fall 2025'."
     })
 
-    # Q2
-    q2_sql = "SELECT ROUND(100.0 * COUNT(*) / (SELECT COUNT(*) FROM applicants), 2) FROM applicants WHERE us_or_international NOT IN ('American', 'Other');"
+ # Q2 (UPDATED FOR SAFETY)
+    q2_sql = """
+        SELECT 
+            CASE 
+                WHEN (SELECT COUNT(*) FROM applicants) = 0 THEN 0
+                ELSE ROUND(100.0 * COUNT(*) / (SELECT COUNT(*) FROM applicants), 2)
+            END
+        FROM applicants 
+        WHERE us_or_international NOT IN ('American', 'Other');
+    """
     rows = q_all(q2_sql)
     ans2 = format_percentage(rows[0][0]) if rows else "0%"
     analysis.append({
@@ -71,8 +79,16 @@ def get_analysis() -> List[Dict[str, Any]]:
         "explanation": "Filters for American students in Fall 2025 and averages their GPA."
     })
 
-    # Q5
-    q5_sql = "SELECT ROUND(100.0 * COUNT(*) / NULLIF((SELECT COUNT(*) FROM applicants WHERE term LIKE 'Fall 2025%'), 0), 2) FROM applicants WHERE status = 'Accepted' AND term LIKE 'Fall 2025%';"
+ # Q5 (UPDATED FOR SAFETY)
+    q5_sql = """
+        SELECT 
+            CASE 
+                WHEN (SELECT COUNT(*) FROM applicants WHERE term LIKE 'Fall 2025%') = 0 THEN 0
+                ELSE ROUND(100.0 * COUNT(*) / (SELECT COUNT(*) FROM applicants WHERE term LIKE 'Fall 2025%'), 2)
+            END
+        FROM applicants 
+        WHERE status = 'Accepted' AND term LIKE 'Fall 2025%';
+    """
     rows = q_all(q5_sql)
     ans5 = format_percentage(rows[0][0]) if rows else "0%"
     analysis.append({
