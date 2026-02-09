@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Module 3: Graduate Admissions Analytics</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <div>
+            <h1>Module 3: Graduate Admissions Analytics</h1>
+            <div class="subtitle">Live PostgreSQL Data Analysis</div>
+        </div>
+        
+        <div class="controls">
+            <span id="status-display">{{ last_status }}</span>
+            
+            <button id="btnPull" data-testid="pull-data-btn" class="btn-pull" onclick="startPull()">
+                Pull Data
+            </button>
+            
+            <button id="btnUpdate" data-testid="update-analysis-btn" class="btn-update" onclick="updateAnalysis()">
+                Update Analysis
+            </button>
+        </div>
+    </header>
+
+    <div id="results-area">
+        {% for item in analysis %}
+        <div class="result-card">
+            <div class="question">Q{{ loop.index }}: {{ item.question }}</div>
+            
+            <div class="answer-box">
+                Answer: {{ item.answer }}
+            </div>
+
+            <details>
+                <summary>View SQL & Logic</summary>
+                <div class="logic-text"><strong>Logic:</strong> {{ item.explanation }}</div>
+                <div class="sql-code">{{ item.sql }}</div>
+            </details>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<script>
+    const btnPull = document.getElementById('btnPull');
+    const btnUpdate = document.getElementById('btnUpdate');
+    const statusSpan = document.getElementById('status-display');
+
+    // If server says we are pulling, disable buttons immediately
+    const isPulling = {{ 'true' if is_pulling else 'false' }};
+    if (isPulling) {
+        btnPull.disabled = true;
+        btnUpdate.disabled = true;
+        pollStatus();
+    }
+
+    async function startPull() {
+        btnPull.disabled = true;
+        btnUpdate.disabled = true;
+        statusSpan.innerText = "Requesting pull...";
+        
+        try {
+            const response = await fetch('/pull-data', { method: 'POST' });
+            const data = await response.json();
+            
+            if (response.status === 409) {
+                alert("Job already running!");
+            } else {
+                statusSpan.innerText = "Job started...";
+                pollStatus();
+            }
+        } catch (err) {
+            statusSpan.innerText = "Error starting job.";
+            btnPull.disabled = false;
+            btnUpdate.disabled = false;
+        }
+    }
+
+    async function updateAnalysis() {
+        if (btnPull.disabled) {
+            alert("Cannot update while Pull Data is running.");
+            return;
+        }
+
+        btnUpdate.innerText = "Refreshing...";
+        statusSpan.innerText = "Fetching latest data...";
+
+        try {
+            const response = await fetch('/update-analysis', { method: 'POST' });
+            if (response.status === 409) {
+                alert("Cannot update: Pull Data is currently running.");
+                statusSpan.innerText = "Update blocked: Pulling data.";
+            } else {
+                // Reload page to render new Jinja data
+                window.location.reload();
+            }
+        } catch (err) {
+            statusSpan.innerText = "Error updating.";
+        } finally {
+            btnUpdate.innerText = "Update Analysis";
+        }
+    }
+
+    // Poll status every 2 seconds if a job is running
+    async function pollStatus() {
+        const interval = setInterval(async () => {
+            const res = await fetch('/status');
+            const data = await res.json();
+            
+            document.getElementById('status-display').innerText = data.status;
+
+            if (!data.pulling) {
+                // Job finished
+                clearInterval(interval);
+                document.getElementById('btnPull').disabled = false;
+                document.getElementById('btnUpdate').disabled = false;
+                alert("Data Pull Complete! You can now Update Analysis.");
+            }
+        }, 2000);
+    }
+</script>
+
+</body>
+</html>

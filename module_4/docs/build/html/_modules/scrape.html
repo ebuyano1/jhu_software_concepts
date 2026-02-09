@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>scrape &#8212; GradCafe Analytics 1.0 documentation</title>
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="../_static/basic.css?v=686e5160" />
+    <link rel="stylesheet" type="text/css" href="../_static/alabaster.css?v=27fed22d" />
+    <script src="../_static/documentation_options.js?v=f2a433a1"></script>
+    <script src="../_static/doctools.js?v=9bcbadda"></script>
+    <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+   
+  <link rel="stylesheet" href="../_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <h1>Source code for scrape</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">urllib.request</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">urllib.error</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">urllib.parse</span><span class="w"> </span><span class="kn">import</span> <span class="n">urlencode</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">bs4</span><span class="w"> </span><span class="kn">import</span> <span class="n">BeautifulSoup</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">random</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">threading</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">concurrent.futures</span><span class="w"> </span><span class="kn">import</span> <span class="n">ThreadPoolExecutor</span><span class="p">,</span> <span class="n">wait</span><span class="p">,</span> <span class="n">FIRST_COMPLETED</span>
+
+<span class="c1"># ---------------- Regex Patterns ----------------</span>
+<span class="c1"># Each GradCafe result has a stable URL like /result/992350.</span>
+<span class="c1"># We use this as our primary key so we can de-dupe cleanly across pages / runs.</span>
+<span class="n">RESULT_HREF_RE</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;^/result/(\d+)$&quot;</span><span class="p">)</span>
+
+<span class="c1"># The “term” usually appears in the detail/badge text as something like “Fall 2026”.</span>
+<span class="n">TERM_RE</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;\b(Fall|Spring|Summer)\s+\d</span><span class="si">{4}</span><span class="s2">\b&quot;</span><span class="p">,</span> <span class="n">re</span><span class="o">.</span><span class="n">I</span><span class="p">)</span>
+
+<span class="c1"># These fields (GPA / GRE) often show up in the detail rows as short strings,</span>
+<span class="c1"># so we extract them using small, targeted regex patterns.</span>
+<span class="n">GPA_RE</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;\bGPA\s*([0-4]\.\d{1,2}|[0-4])\b&quot;</span><span class="p">,</span> <span class="n">re</span><span class="o">.</span><span class="n">I</span><span class="p">)</span>
+<span class="n">GRE_V_RE</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;\bV\s*[:\-]?\s*(\d{2,3})\b&quot;</span><span class="p">,</span> <span class="n">re</span><span class="o">.</span><span class="n">I</span><span class="p">)</span>
+<span class="n">GRE_Q_RE</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;\bQ\s*[:\-]?\s*(\d{2,3})\b&quot;</span><span class="p">,</span> <span class="n">re</span><span class="o">.</span><span class="n">I</span><span class="p">)</span>
+<span class="n">GRE_AW_RE</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;\bAW\s*[:\-]?\s*([\d.]+)\b&quot;</span><span class="p">,</span> <span class="n">re</span><span class="o">.</span><span class="n">I</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="GradCafeScraper">
+<a class="viewcode-back" href="../api.html#scrape.GradCafeScraper">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">GradCafeScraper</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Uses urllib.request + BeautifulSoup (lecture topics only).</span>
+
+<span class="sd">    IMPORTANT FIX (from debug HTML):</span>
+<span class="sd">      - Pagination uses `page=&lt;n&gt;` not `p=&lt;n&gt;`</span>
+<span class="sd">      - The links show p=52 constant, and page=2,3,4... for pagination</span>
+<span class="sd">        Example: /survey/index.php?q=&amp;t=a&amp;pp=50&amp;p=52&amp;page=2</span>
+
+<span class="sd">    This scraper:</span>
+<span class="sd">      - fetches pages in parallel (modest workers)</span>
+<span class="sd">      - groups multi-&lt;tr&gt; records (main row + detail rows + optional comment row)</span>
+<span class="sd">      - dedupes by result_id</span>
+<span class="sd">      - saves atomically + can resume</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="c1"># Base admissions “survey” page (this is the big results listing)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">base_url</span> <span class="o">=</span> <span class="s2">&quot;https://www.thegradcafe.com/survey/index.php&quot;</span>
+
+        <span class="c1"># We write all collected results here (also used for resume)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">output_file</span> <span class="o">=</span> <span class="s2">&quot;applicant_data.json&quot;</span>
+
+        <span class="c1"># Per-page requested. The site may return fewer, but we request 50 for efficiency.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">per_page</span> <span class="o">=</span> <span class="mi">50</span>
+
+        <span class="c1"># Key detail from debugging: GradCafe expects p=52 to be present as a constant.</span>
+        <span class="c1"># The actual page number is controlled by `page=&lt;n&gt;`.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fixed_p</span> <span class="o">=</span> <span class="s2">&quot;52&quot;</span>
+
+        <span class="c1"># Parallelism + timeouts are configurable via env vars, so you can tune</span>
+        <span class="c1"># based on how fast/slow the site is responding for you.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">max_workers</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">getenv</span><span class="p">(</span><span class="s2">&quot;SCRAPE_WORKERS&quot;</span><span class="p">,</span> <span class="s2">&quot;4&quot;</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">timeout</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">getenv</span><span class="p">(</span><span class="s2">&quot;SCRAPE_TIMEOUT&quot;</span><span class="p">,</span> <span class="s2">&quot;12&quot;</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">max_retries</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">getenv</span><span class="p">(</span><span class="s2">&quot;SCRAPE_RETRIES&quot;</span><span class="p">,</span> <span class="s2">&quot;4&quot;</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">save_every_pages</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">getenv</span><span class="p">(</span><span class="s2">&quot;SAVE_EVERY_PAGES&quot;</span><span class="p">,</span> <span class="s2">&quot;10&quot;</span><span class="p">))</span>
+
+        <span class="c1"># Small random delay per request helps avoid hammering the site and reduces</span>
+        <span class="c1"># the chance of rate-limits or temporary blocks.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">jitter_min</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">getenv</span><span class="p">(</span><span class="s2">&quot;JITTER_MIN&quot;</span><span class="p">,</span> <span class="s2">&quot;0.10&quot;</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">jitter_max</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">getenv</span><span class="p">(</span><span class="s2">&quot;JITTER_MAX&quot;</span><span class="p">,</span> <span class="s2">&quot;0.35&quot;</span><span class="p">))</span>
+
+        <span class="c1"># Basic headers so we look like a normal browser request.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">headers</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">&quot;User-Agent&quot;</span><span class="p">:</span> <span class="s2">&quot;Mozilla/5.0 (Windows NT 10.0; Win64; x64) JHU-Software-Concepts-Scraper/1.0&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;Accept&quot;</span><span class="p">:</span> <span class="s2">&quot;text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;Accept-Language&quot;</span><span class="p">:</span> <span class="s2">&quot;en-US,en;q=0.9&quot;</span><span class="p">,</span>
+        <span class="p">}</span>
+
+        <span class="c1"># Results collection + a set for fast de-duplication by result_id.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">results</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_seen_ids</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+
+        <span class="c1"># Lock is only needed when multiple threads append to shared structures.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_lock</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Lock</span><span class="p">()</span>
+
+        <span class="c1"># If there is no prior data, we start at page 1.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">start_page</span> <span class="o">=</span> <span class="mi">1</span>
+
+        <span class="c1"># Resume support:</span>
+        <span class="c1"># If applicant_data.json exists, load it and continue scraping where we left off.</span>
+        <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">output_file</span><span class="p">):</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">output_file</span><span class="p">,</span> <span class="s2">&quot;r&quot;</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">&quot;utf-8&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">results</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">f</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+                <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">results</span><span class="p">:</span>
+                    <span class="n">rid</span> <span class="o">=</span> <span class="p">(</span><span class="n">r</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;result_id&quot;</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">rid</span><span class="p">:</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">_seen_ids</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">rid</span><span class="p">))</span>
+
+                <span class="c1"># The site tends to return ~20 “main records” per page.</span>
+                <span class="c1"># This is a rough estimate, but good enough for resuming without starting over.</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">start_page</span> <span class="o">=</span> <span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">results</span><span class="p">)</span> <span class="o">//</span> <span class="mi">20</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Resuming at page </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">start_page</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">results</span><span class="p">)</span><span class="si">}</span><span class="s2"> records)&quot;</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                <span class="c1"># If the JSON is corrupted or unreadable for any reason, start fresh.</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">results</span> <span class="o">=</span> <span class="p">[]</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_seen_ids</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">start_page</span> <span class="o">=</span> <span class="mi">1</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_build_url</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">page_num</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="c1"># IMPORTANT:</span>
+        <span class="c1">#  - `page` is the real page number.</span>
+        <span class="c1">#  - `p` remains constant (as seen in GradCafe’s own pagination links).</span>
+        <span class="n">params</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">&quot;q&quot;</span><span class="p">:</span> <span class="s2">&quot;&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;t&quot;</span><span class="p">:</span> <span class="s2">&quot;a&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;pp&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">per_page</span><span class="p">,</span>
+            <span class="s2">&quot;p&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">fixed_p</span><span class="p">,</span>
+            <span class="s2">&quot;page&quot;</span><span class="p">:</span> <span class="n">page_num</span><span class="p">,</span>
+            <span class="s2">&quot;sort&quot;</span><span class="p">:</span> <span class="s2">&quot;newest&quot;</span><span class="p">,</span>  <span class="c1"># makes pagination stable and predictable</span>
+        <span class="p">}</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">base_url</span><span class="si">}</span><span class="s2">?</span><span class="si">{</span><span class="n">urlencode</span><span class="p">(</span><span class="n">params</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_fetch_html</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">page_num</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bytes</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="c1"># Build request for a specific survey results page</span>
+        <span class="n">url</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_build_url</span><span class="p">(</span><span class="n">page_num</span><span class="p">)</span>
+        <span class="n">req</span> <span class="o">=</span> <span class="n">urllib</span><span class="o">.</span><span class="n">request</span><span class="o">.</span><span class="n">Request</span><span class="p">(</span><span class="n">url</span><span class="p">,</span> <span class="n">headers</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">headers</span><span class="p">)</span>
+
+        <span class="c1"># Polite jitter to avoid bursts (helps with stability in long runs)</span>
+        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">random</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">jitter_min</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">jitter_max</span><span class="p">))</span>
+
+        <span class="c1"># Retry loop: handle transient errors like 429 / 5xx / network hiccups.</span>
+        <span class="k">for</span> <span class="n">attempt</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">max_retries</span> <span class="o">+</span> <span class="mi">1</span><span class="p">):</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="k">with</span> <span class="n">urllib</span><span class="o">.</span><span class="n">request</span><span class="o">.</span><span class="n">urlopen</span><span class="p">(</span><span class="n">req</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">timeout</span><span class="p">)</span> <span class="k">as</span> <span class="n">resp</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="n">resp</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+
+            <span class="k">except</span> <span class="n">urllib</span><span class="o">.</span><span class="n">error</span><span class="o">.</span><span class="n">HTTPError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                <span class="c1"># Common “temporary” errors: backoff and try again.</span>
+                <span class="k">if</span> <span class="n">e</span><span class="o">.</span><span class="n">code</span> <span class="ow">in</span> <span class="p">(</span><span class="mi">429</span><span class="p">,</span> <span class="mi">500</span><span class="p">,</span> <span class="mi">502</span><span class="p">,</span> <span class="mi">503</span><span class="p">,</span> <span class="mi">504</span><span class="p">):</span>
+                    <span class="n">backoff</span> <span class="o">=</span> <span class="p">(</span><span class="mi">2</span> <span class="o">**</span> <span class="n">attempt</span><span class="p">)</span> <span class="o">*</span> <span class="mf">0.6</span> <span class="o">+</span> <span class="n">random</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.4</span><span class="p">)</span>
+                    <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">backoff</span><span class="p">)</span>
+                    <span class="k">continue</span>
+                <span class="c1"># For other HTTP errors, treat as non-recoverable for this page.</span>
+                <span class="k">return</span> <span class="kc">None</span>
+
+            <span class="k">except</span> <span class="n">urllib</span><span class="o">.</span><span class="n">error</span><span class="o">.</span><span class="n">URLError</span><span class="p">:</span>
+                <span class="c1"># Network/DNS/etc. temporary failure — backoff and retry.</span>
+                <span class="n">backoff</span> <span class="o">=</span> <span class="p">(</span><span class="mi">2</span> <span class="o">**</span> <span class="n">attempt</span><span class="p">)</span> <span class="o">*</span> <span class="mf">0.6</span> <span class="o">+</span> <span class="n">random</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.4</span><span class="p">)</span>
+                <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">backoff</span><span class="p">)</span>
+                <span class="k">continue</span>
+
+            <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                <span class="c1"># Catch-all safety: we don’t want a single weird error to kill the run.</span>
+                <span class="n">backoff</span> <span class="o">=</span> <span class="p">(</span><span class="mi">2</span> <span class="o">**</span> <span class="n">attempt</span><span class="p">)</span> <span class="o">*</span> <span class="mf">0.6</span> <span class="o">+</span> <span class="n">random</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.4</span><span class="p">)</span>
+                <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">backoff</span><span class="p">)</span>
+                <span class="k">continue</span>
+
+        <span class="c1"># If we exhausted retries, mark the page as failed.</span>
+        <span class="k">return</span> <span class="kc">None</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_parse_page</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">page_num</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Fetch and parse one survey page.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">          (page_num, entries, status)</span>
+
+<span class="sd">        status values:</span>
+<span class="sd">          - &quot;ok&quot;: parsed successfully (entries may still be empty)</span>
+<span class="sd">          - &quot;empty&quot;: HTML parsed, but expected table/rows not found</span>
+<span class="sd">          - &quot;error&quot;: request failed or parsing raised an exception</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">html</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_fetch_html</span><span class="p">(</span><span class="n">page_num</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">html</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">page_num</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="s2">&quot;error&quot;</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="c1"># Parse the HTML into a BeautifulSoup DOM tree</span>
+            <span class="n">soup</span> <span class="o">=</span> <span class="n">BeautifulSoup</span><span class="p">(</span><span class="n">html</span><span class="p">,</span> <span class="s2">&quot;html.parser&quot;</span><span class="p">)</span>
+
+            <span class="c1"># The survey results are inside a &lt;tbody&gt; with a series of &lt;tr&gt; rows.</span>
+            <span class="n">tbody</span> <span class="o">=</span> <span class="n">soup</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s2">&quot;tbody&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">tbody</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">page_num</span><span class="p">,</span> <span class="p">[],</span> <span class="s2">&quot;empty&quot;</span>
+
+            <span class="c1"># IMPORTANT:</span>
+            <span class="c1"># GradCafe uses multiple &lt;tr&gt; rows per application record:</span>
+            <span class="c1">#   - a “main” row with key columns (school/program/status/etc.)</span>
+            <span class="c1">#   - one or more “detail” rows with badges (term, GPA, American/International, etc.)</span>
+            <span class="c1">#   - sometimes a comment row with a &lt;p&gt; element</span>
+            <span class="n">rows</span> <span class="o">=</span> <span class="n">tbody</span><span class="o">.</span><span class="n">find_all</span><span class="p">(</span><span class="s2">&quot;tr&quot;</span><span class="p">,</span> <span class="n">recursive</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">rows</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">page_num</span><span class="p">,</span> <span class="p">[],</span> <span class="s2">&quot;empty&quot;</span>
+
+            <span class="n">entries</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="n">i</span> <span class="o">=</span> <span class="mi">0</span>
+            <span class="k">while</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">rows</span><span class="p">):</span>
+                <span class="n">tr</span> <span class="o">=</span> <span class="n">rows</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+                <span class="n">tds</span> <span class="o">=</span> <span class="n">tr</span><span class="o">.</span><span class="n">find_all</span><span class="p">(</span><span class="s2">&quot;td&quot;</span><span class="p">,</span> <span class="n">recursive</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+                <span class="c1"># If the row does not look like a “main” row, skip it.</span>
+                <span class="c1"># Main rows have at least 4 direct &lt;td&gt; cells.</span>
+                <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">tds</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">4</span><span class="p">:</span>
+                    <span class="n">i</span> <span class="o">+=</span> <span class="mi">1</span>
+                    <span class="k">continue</span>
+
+                <span class="c1"># The presence of a /result/&lt;id&gt; link is what really identifies a main row.</span>
+                <span class="n">a</span> <span class="o">=</span> <span class="n">tr</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s2">&quot;a&quot;</span><span class="p">,</span> <span class="n">href</span><span class="o">=</span><span class="n">RESULT_HREF_RE</span><span class="p">)</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">a</span><span class="p">:</span>
+                    <span class="n">i</span> <span class="o">+=</span> <span class="mi">1</span>
+                    <span class="k">continue</span>
+
+                <span class="c1"># Extract the stable record identifier from the URL</span>
+                <span class="n">m</span> <span class="o">=</span> <span class="n">RESULT_HREF_RE</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">a</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;href&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">))</span>
+                <span class="n">result_id</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span> <span class="k">if</span> <span class="n">m</span> <span class="k">else</span> <span class="kc">None</span>
+                <span class="n">url</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;https://www.thegradcafe.com</span><span class="si">{</span><span class="n">a</span><span class="p">[</span><span class="s1">&#39;href&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span>
+
+                <span class="c1"># Column 0: Institution name</span>
+                <span class="n">school</span> <span class="o">=</span> <span class="n">tds</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">get_text</span><span class="p">(</span><span class="s2">&quot; &quot;</span><span class="p">,</span> <span class="n">strip</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+                <span class="c1"># Column 1: Program cell often includes multiple spans:</span>
+                <span class="c1">#   - span[0] is the major/program name</span>
+                <span class="c1">#   - span[1] is the degree type (e.g., PhD, Masters)</span>
+                <span class="n">prog_cell</span> <span class="o">=</span> <span class="n">tds</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+                <span class="n">spans</span> <span class="o">=</span> <span class="n">prog_cell</span><span class="o">.</span><span class="n">find_all</span><span class="p">(</span><span class="s2">&quot;span&quot;</span><span class="p">)</span>
+                <span class="n">program</span> <span class="o">=</span> <span class="n">spans</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">get_text</span><span class="p">(</span><span class="s2">&quot; &quot;</span><span class="p">,</span> <span class="n">strip</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">spans</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">1</span> <span class="k">else</span> <span class="n">prog_cell</span><span class="o">.</span><span class="n">get_text</span><span class="p">(</span><span class="s2">&quot; &quot;</span><span class="p">,</span> <span class="n">strip</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+                <span class="n">degree</span> <span class="o">=</span> <span class="n">spans</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">get_text</span><span class="p">(</span><span class="s2">&quot; &quot;</span><span class="p">,</span> <span class="n">strip</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">spans</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">2</span> <span class="k">else</span> <span class="kc">None</span>
+
+                <span class="c1"># Column 2: Date added to the GradCafe survey listing</span>
+                <span class="n">date_added</span> <span class="o">=</span> <span class="n">tds</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span><span class="o">.</span><span class="n">get_text</span><span class="p">(</span><span class="s2">&quot; &quot;</span><span class="p">,</span> <span class="n">strip</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">tds</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">3</span> <span class="k">else</span> <span class="kc">None</span>
+
+                <span class="c1"># Column 3: Status/decision text (e.g., “Rejected on 27 Jan”)</span>
+                <span class="n">status</span> <span class="o">=</span> <span class="n">tds</span><span class="p">[</span><span class="mi">3</span><span class="p">]</span><span class="o">.</span><span class="n">get_text</span><span class="p">(</span><span class="s2">&quot; &quot;</span><span class="p">,</span> <span class="n">strip</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">tds</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">4</span> <span class="k">else</span> <span class="kc">None</span>
+
+                <span class="c1"># Now gather the “detail rows” that belong to this record.</span>
+                <span class="c1"># We keep consuming rows until we reach the next main record row.</span>
+                <span class="n">j</span> <span class="o">=</span> <span class="n">i</span> <span class="o">+</span> <span class="mi">1</span>
+                <span class="n">detail_text_chunks</span> <span class="o">=</span> <span class="p">[]</span>
+                <span class="n">comment</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+
+                <span class="k">while</span> <span class="n">j</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">rows</span><span class="p">):</span>
+                    <span class="n">nxt</span> <span class="o">=</span> <span class="n">rows</span><span class="p">[</span><span class="n">j</span><span class="p">]</span>
+                    <span class="n">nxt_tds</span> <span class="o">=</span> <span class="n">nxt</span><span class="o">.</span><span class="n">find_all</span><span class="p">(</span><span class="s2">&quot;td&quot;</span><span class="p">,</span> <span class="n">recursive</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+                    <span class="c1"># A new main record begins when:</span>
+                    <span class="c1">#   - it has &gt;= 4 direct td cells, AND</span>
+                    <span class="c1">#   - it contains another /result/&lt;id&gt; link</span>
+                    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">nxt_tds</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">4</span> <span class="ow">and</span> <span class="n">nxt</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s2">&quot;a&quot;</span><span class="p">,</span> <span class="n">href</span><span class="o">=</span><span class="n">RESULT_HREF_RE</span><span class="p">):</span>
+                        <span class="k">break</span>
+
+                    <span class="c1"># The badge/detail rows usually contain the term, GPA, GRE, etc.</span>
+                    <span class="n">txt</span> <span class="o">=</span> <span class="n">nxt</span><span class="o">.</span><span class="n">get_text</span><span class="p">(</span><span class="s2">&quot; &quot;</span><span class="p">,</span> <span class="n">strip</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">txt</span><span class="p">:</span>
+                        <span class="n">detail_text_chunks</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">txt</span><span class="p">)</span>
+
+                    <span class="c1"># The optional “comment” row includes a &lt;p&gt; tag (if the user left notes).</span>
+                    <span class="n">p</span> <span class="o">=</span> <span class="n">nxt</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s2">&quot;p&quot;</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">p</span> <span class="ow">and</span> <span class="n">p</span><span class="o">.</span><span class="n">get_text</span><span class="p">(</span><span class="n">strip</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+                        <span class="n">comment</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">get_text</span><span class="p">(</span><span class="n">strip</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+                    <span class="n">j</span> <span class="o">+=</span> <span class="mi">1</span>
+
+                <span class="c1"># This is the combined text for all detail rows,</span>
+                <span class="c1"># which we then mine with regex for specific values.</span>
+                <span class="n">detail_blob</span> <span class="o">=</span> <span class="s2">&quot; &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">detail_text_chunks</span><span class="p">)</span>
+
+                <span class="c1"># Term (Fall/Spring/Summer + year)</span>
+                <span class="n">term</span> <span class="o">=</span> <span class="kc">None</span>
+                <span class="n">term_m</span> <span class="o">=</span> <span class="n">TERM_RE</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="n">detail_blob</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">term_m</span><span class="p">:</span>
+                    <span class="n">term</span> <span class="o">=</span> <span class="n">term_m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+
+                <span class="c1"># Degree’s country of origin (American vs International)</span>
+                <span class="n">us_intl</span> <span class="o">=</span> <span class="kc">None</span>
+                <span class="k">if</span> <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;\bInternational\b&quot;</span><span class="p">,</span> <span class="n">detail_blob</span><span class="p">,</span> <span class="n">re</span><span class="o">.</span><span class="n">I</span><span class="p">):</span>
+                    <span class="n">us_intl</span> <span class="o">=</span> <span class="s2">&quot;International&quot;</span>
+                <span class="k">elif</span> <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;\bAmerican\b&quot;</span><span class="p">,</span> <span class="n">detail_blob</span><span class="p">,</span> <span class="n">re</span><span class="o">.</span><span class="n">I</span><span class="p">):</span>
+                    <span class="n">us_intl</span> <span class="o">=</span> <span class="s2">&quot;American&quot;</span>
+
+                <span class="c1"># GPA (if present in badge text)</span>
+                <span class="n">gpa</span> <span class="o">=</span> <span class="kc">None</span>
+                <span class="n">gpa_m</span> <span class="o">=</span> <span class="n">GPA_RE</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="n">detail_blob</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">gpa_m</span><span class="p">:</span>
+                    <span class="n">gpa</span> <span class="o">=</span> <span class="n">gpa_m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+
+                <span class="c1"># GRE scores (if present). Many records omit these entirely.</span>
+                <span class="n">v</span> <span class="o">=</span> <span class="n">GRE_V_RE</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="n">detail_blob</span><span class="p">)</span>
+                <span class="n">q</span> <span class="o">=</span> <span class="n">GRE_Q_RE</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="n">detail_blob</span><span class="p">)</span>
+                <span class="n">aw</span> <span class="o">=</span> <span class="n">GRE_AW_RE</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="n">detail_blob</span><span class="p">)</span>
+
+                <span class="c1"># Create the normalized dictionary for this record.</span>
+                <span class="c1"># Note: result_id is our stable de-dupe key.</span>
+                <span class="n">entries</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                    <span class="p">{</span>
+                        <span class="s2">&quot;result_id&quot;</span><span class="p">:</span> <span class="n">result_id</span><span class="p">,</span>
+                        <span class="s2">&quot;url&quot;</span><span class="p">:</span> <span class="n">url</span><span class="p">,</span>
+                        <span class="s2">&quot;university&quot;</span><span class="p">:</span> <span class="n">school</span><span class="p">,</span>
+                        <span class="s2">&quot;program&quot;</span><span class="p">:</span> <span class="n">program</span><span class="p">,</span>
+                        <span class="s2">&quot;Degree&quot;</span><span class="p">:</span> <span class="n">degree</span><span class="p">,</span>
+                        <span class="s2">&quot;date_added&quot;</span><span class="p">:</span> <span class="n">date_added</span><span class="p">,</span>
+                        <span class="s2">&quot;status&quot;</span><span class="p">:</span> <span class="n">status</span><span class="p">,</span>
+                        <span class="s2">&quot;term&quot;</span><span class="p">:</span> <span class="n">term</span><span class="p">,</span>
+                        <span class="s2">&quot;US/International&quot;</span><span class="p">:</span> <span class="n">us_intl</span><span class="p">,</span>
+                        <span class="s2">&quot;GPA&quot;</span><span class="p">:</span> <span class="n">gpa</span><span class="p">,</span>
+                        <span class="s2">&quot;GRE V Score&quot;</span><span class="p">:</span> <span class="n">v</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span> <span class="k">if</span> <span class="n">v</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+                        <span class="s2">&quot;GRE Score&quot;</span><span class="p">:</span> <span class="n">q</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span> <span class="k">if</span> <span class="n">q</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+                        <span class="s2">&quot;GRE AW&quot;</span><span class="p">:</span> <span class="n">aw</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span> <span class="k">if</span> <span class="n">aw</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+                        <span class="s2">&quot;comments&quot;</span><span class="p">:</span> <span class="n">comment</span> <span class="ow">or</span> <span class="s2">&quot;&quot;</span><span class="p">,</span>
+                    <span class="p">}</span>
+                <span class="p">)</span>
+
+                <span class="c1"># Move i to the next main record row</span>
+                <span class="n">i</span> <span class="o">=</span> <span class="n">j</span>
+
+            <span class="k">return</span> <span class="n">page_num</span><span class="p">,</span> <span class="n">entries</span><span class="p">,</span> <span class="s2">&quot;ok&quot;</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="c1"># If anything unexpected happens (HTML change, parse error, etc.),</span>
+            <span class="c1"># mark this page as an error so the caller can keep going.</span>
+            <span class="k">return</span> <span class="n">page_num</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="s2">&quot;error&quot;</span>
+
+<div class="viewcode-block" id="GradCafeScraper.scrape_data">
+<a class="viewcode-back" href="../api.html#scrape.GradCafeScraper.scrape_data">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">scrape_data</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">target</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">30000</span><span class="p">):</span>
+        <span class="c1"># Counters used for progress reporting and for detecting long runs of failures.</span>
+        <span class="n">pages_done</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">consecutive_bad</span> <span class="o">=</span> <span class="mi">0</span>
+
+        <span class="c1"># If we hit too many pages in a row that are empty/error, assume we’re done or blocked.</span>
+        <span class="n">max_consecutive_bad</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mi">12</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">max_workers</span> <span class="o">*</span> <span class="mi">4</span><span class="p">)</span>
+
+        <span class="c1"># Start where we left off (or page 1 if no prior output exists).</span>
+        <span class="n">next_page</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">start_page</span>
+
+        <span class="c1"># ThreadPoolExecutor lets us overlap network requests (I/O-bound),</span>
+        <span class="c1"># which makes scraping MUCH faster than strictly sequential fetching.</span>
+        <span class="k">with</span> <span class="n">ThreadPoolExecutor</span><span class="p">(</span><span class="n">max_workers</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">max_workers</span><span class="p">)</span> <span class="k">as</span> <span class="n">ex</span><span class="p">:</span>
+            <span class="n">in_flight</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+
+            <span class="c1"># Prime the pipeline: launch the first N page fetch/parse tasks.</span>
+            <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">max_workers</span><span class="p">):</span>
+                <span class="n">in_flight</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">ex</span><span class="o">.</span><span class="n">submit</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_parse_page</span><span class="p">,</span> <span class="n">next_page</span><span class="p">))</span>
+                <span class="n">next_page</span> <span class="o">+=</span> <span class="mi">1</span>
+
+            <span class="c1"># Main loop: keep going until we hit the target number of records,</span>
+            <span class="c1"># or until we decide the site is no longer giving useful pages.</span>
+            <span class="k">while</span> <span class="n">in_flight</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">results</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">target</span><span class="p">:</span>
+                <span class="n">done</span><span class="p">,</span> <span class="n">in_flight</span> <span class="o">=</span> <span class="n">wait</span><span class="p">(</span>
+                    <span class="n">in_flight</span><span class="p">,</span>
+                    <span class="n">timeout</span><span class="o">=</span><span class="nb">max</span><span class="p">(</span><span class="mf">5.0</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">timeout</span> <span class="o">+</span> <span class="mf">2.0</span><span class="p">),</span>
+                    <span class="n">return_when</span><span class="o">=</span><span class="n">FIRST_COMPLETED</span><span class="p">,</span>
+                <span class="p">)</span>
+
+                <span class="c1"># If nothing finished within the wait timeout, pause briefly and try again.</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">done</span><span class="p">:</span>
+                    <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.2</span><span class="p">)</span>
+                    <span class="k">continue</span>
+
+                <span class="k">for</span> <span class="n">fut</span> <span class="ow">in</span> <span class="n">done</span><span class="p">:</span>
+                    <span class="k">try</span><span class="p">:</span>
+                        <span class="n">page_num</span><span class="p">,</span> <span class="n">entries</span><span class="p">,</span> <span class="n">status</span> <span class="o">=</span> <span class="n">fut</span><span class="o">.</span><span class="n">result</span><span class="p">()</span>
+                    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                        <span class="n">page_num</span><span class="p">,</span> <span class="n">entries</span><span class="p">,</span> <span class="n">status</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="s2">&quot;error&quot;</span>
+
+                    <span class="n">pages_done</span> <span class="o">+=</span> <span class="mi">1</span>
+
+                    <span class="c1"># If we got good entries, append only the new ones.</span>
+                    <span class="c1"># The lock protects self.results / self._seen_ids from race conditions.</span>
+                    <span class="k">if</span> <span class="n">status</span> <span class="o">==</span> <span class="s2">&quot;ok&quot;</span> <span class="ow">and</span> <span class="n">entries</span><span class="p">:</span>
+                        <span class="n">consecutive_bad</span> <span class="o">=</span> <span class="mi">0</span>
+                        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lock</span><span class="p">:</span>
+                            <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">entries</span><span class="p">:</span>
+                                <span class="n">rid</span> <span class="o">=</span> <span class="nb">str</span><span class="p">((</span><span class="n">e</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;result_id&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+                                <span class="k">if</span> <span class="ow">not</span> <span class="n">rid</span> <span class="ow">or</span> <span class="n">rid</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_seen_ids</span><span class="p">:</span>
+                                    <span class="k">continue</span>
+                                <span class="bp">self</span><span class="o">.</span><span class="n">_seen_ids</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">rid</span><span class="p">)</span>
+                                <span class="bp">self</span><span class="o">.</span><span class="n">results</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">e</span><span class="p">)</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="c1"># Empty/error pages count toward the “bad streak” detector.</span>
+                        <span class="n">consecutive_bad</span> <span class="o">+=</span> <span class="mi">1</span>
+
+                    <span class="c1"># Progress bar-style output (single updating line in the terminal).</span>
+                    <span class="n">pct</span> <span class="o">=</span> <span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">results</span><span class="p">)</span> <span class="o">/</span> <span class="n">target</span><span class="p">)</span> <span class="o">*</span> <span class="mi">100</span>
+                    <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">write</span><span class="p">(</span>
+                        <span class="sa">f</span><span class="s2">&quot;</span><span class="se">\r</span><span class="s2">Progress: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">results</span><span class="p">)</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">target</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="n">pct</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">%) | &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;Pages done: </span><span class="si">{</span><span class="n">pages_done</span><span class="si">}</span><span class="s2"> | Bad streak: </span><span class="si">{</span><span class="n">consecutive_bad</span><span class="si">}</span><span class="s2">&quot;</span>
+                    <span class="p">)</span>
+                    <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
+
+                    <span class="c1"># Periodic saving so we can resume if anything interrupts the run.</span>
+                    <span class="k">if</span> <span class="n">pages_done</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">save_every_pages</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">save_data</span><span class="p">()</span>
+
+                    <span class="c1"># If we hit too many bad pages in a row, stop gracefully.</span>
+                    <span class="k">if</span> <span class="n">consecutive_bad</span> <span class="o">&gt;=</span> <span class="n">max_consecutive_bad</span><span class="p">:</span>
+                        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Stopping early: too many consecutive empty/error pages (end or blocked).&quot;</span><span class="p">)</span>
+                        <span class="n">in_flight</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
+                        <span class="k">break</span>
+
+                    <span class="c1"># Keep the pipeline full by submitting the next page task.</span>
+                    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">results</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">target</span><span class="p">:</span>
+                        <span class="n">in_flight</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">ex</span><span class="o">.</span><span class="n">submit</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_parse_page</span><span class="p">,</span> <span class="n">next_page</span><span class="p">))</span>
+                        <span class="n">next_page</span> <span class="o">+=</span> <span class="mi">1</span>
+
+        <span class="c1"># Final save at the end (ensures output_file is up to date)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">save_data</span><span class="p">()</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Done.&quot;</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="GradCafeScraper.save_data">
+<a class="viewcode-back" href="../api.html#scrape.GradCafeScraper.save_data">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">save_data</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="c1"># Write to a temp file first, then atomically replace the real output.</span>
+        <span class="c1"># This helps prevent partial/corrupted JSON files if the program is interrupted.</span>
+        <span class="n">tmp</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">output_file</span> <span class="o">+</span> <span class="s2">&quot;.tmp&quot;</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">tmp</span><span class="p">,</span> <span class="s2">&quot;w&quot;</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">&quot;utf-8&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="n">json</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">results</span><span class="p">,</span> <span class="n">f</span><span class="p">,</span> <span class="n">ensure_ascii</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">indent</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">tmp</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">output_file</span><span class="p">)</span></div>
+</div>
+
+
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="c1"># Allow overriding the target from the environment, but default to 30,000.</span>
+    <span class="n">target</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">getenv</span><span class="p">(</span><span class="s2">&quot;TARGET&quot;</span><span class="p">,</span> <span class="s2">&quot;30000&quot;</span><span class="p">))</span>
+
+    <span class="c1"># Kick off the scraping run.</span>
+    <span class="n">GradCafeScraper</span><span class="p">()</span><span class="o">.</span><span class="n">scrape_data</span><span class="p">(</span><span class="n">target</span><span class="p">)</span>
+</pre></div>
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="../index.html">GradCafe Analytics</a></h1>
+
+
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../api.html">API Reference</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../index.html">Documentation overview</a><ul>
+  <li><a href="index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &#169;2026, Eugene Buyanovsky.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 8.1.3</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+    </div>
+
+    
+
+    
+  </body>
+</html>
