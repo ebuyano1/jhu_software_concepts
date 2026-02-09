@@ -26,29 +26,36 @@ def test_db():
     conn.set_isolation_level(psycopg2.extensions.ISOLATION_LEVEL_AUTOCOMMIT)
     cur = conn.cursor()
     
-    # 2. Heavy-Duty Retry Loop (10 attempts)
+    # 2. Heavy-Duty Retry Loop with Connection Polling
     for i in range(10):
         try:
-            # Terminate connections inside the loop
+            # Terminate connections to the target DB
             cur.execute("""
                 SELECT pg_terminate_backend(pid) 
                 FROM pg_stat_activity 
                 WHERE datname = %s AND pid <> pg_backend_pid();
             """, (TEST_DB_NAME,))
             
-            time.sleep(2) # Let termination settle
+            # Polling: Wait for connection count to hit zero before dropping
+            for _ in range(5):
+                cur.execute("SELECT COUNT(*) FROM pg_stat_activity WHERE datname = %s;", (TEST_DB_NAME,))
+                if cur.fetchone()[0] == 0:
+                    break
+                time.sleep(2)
+
+            # Attempt the drop
             cur.execute(f"DROP DATABASE IF EXISTS {TEST_DB_NAME};")
             break 
         except psycopg2.errors.ObjectInUse:
             if i == 9: raise 
-            time.sleep(5) # Wait for CI latency
+            time.sleep(5) # Final wait for CI latency
             
     # 3. Recreate the database
     cur.execute(f"CREATE DATABASE {TEST_DB_NAME};")
     cur.close()
     conn.close()
     
-    # Use yield so the DB persists for all tests
+    # Use yield to keep DB alive for all tests
     yield get_db_dsn(env_overrides={"PGDATABASE": TEST_DB_NAME})
 
 @pytest.fixture(scope="function")
