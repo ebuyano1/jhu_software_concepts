@@ -20,29 +20,30 @@ TEST_DB_NAME = "gradcafe_test"
 
 @pytest.fixture(scope="session")
 def test_db():
-    # 1. Connect to the 'postgres' maintenance database first
+    # 1. Connect to 'postgres' maintenance database
     default_dsn = get_db_dsn(env_overrides={"PGDATABASE": "postgres"})
     conn = psycopg2.connect(default_dsn)
     conn.set_isolation_level(psycopg2.extensions.ISOLATION_LEVEL_AUTOCOMMIT)
     cur = conn.cursor()
     
-    # 2. Forcefully terminate all other connections to gradcafe_test
-    cur.execute("""
-        SELECT pg_terminate_backend(pid) 
-        FROM pg_stat_activity 
-        WHERE datname = %s AND pid <> pg_backend_pid();
-    """, (TEST_DB_NAME,))
-    
-    # 3. Robust Drop with Retry Loop to resolve "ObjectInUse"
-    for i in range(5):
+    # 2. Robust Retry Loop with internal termination
+    for i in range(10):  # 10 attempts for high-latency CI environments
         try:
+            # Terminate connections again inside the loop to catch new zombies
+            cur.execute("""
+                SELECT pg_terminate_backend(pid) 
+                FROM pg_stat_activity 
+                WHERE datname = %s AND pid <> pg_backend_pid();
+            """, (TEST_DB_NAME,))
+            
             cur.execute(f"DROP DATABASE IF EXISTS {TEST_DB_NAME};")
             break  # Success!
         except psycopg2.errors.ObjectInUse:
-            if i == 4: raise  # Re-raise error if all 5 attempts fail
-            time.sleep(1)     # Wait 1 second before trying again
+            if i == 9: 
+                raise  # Fail definitively after 10 tries
+            time.sleep(2)  # Wait 2 seconds for the OS to release locks
             
-    # 4. Recreate the database
+    # 3. Recreate the database
     cur.execute(f"CREATE DATABASE {TEST_DB_NAME};")
     
     cur.close()
