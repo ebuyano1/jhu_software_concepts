@@ -1,0 +1,19 @@
+# Read the Docs configuration file
+version: 2
+
+# 1. Build documentation with Sphinx
+# We point to the conf.py file. 
+
+sphinx:
+  configuration: module_4/docs/source/conf.py
+
+# 2. Build with Python 3.10 (for the server)
+python:
+  install:
+    - requirements: module_4/requirements.txt
+
+# 3. Server OS Settings (Keep this as Ubuntu for the server)
+build:
+  os: ubuntu-22.04
+  tools:
+    python: "3.10"
