@@ -4,57 +4,69 @@ Module 4: Testing, CI, & Documentation with AI
 
 Overview
 ========
-This module focuses on hardening the GradCafe Analytics application. 
+This module focuses on hardening the GradCafe Analytics application.
 I have implemented a comprehensive test suite achieving 100% code coverage, refactored the application 
 to use the "Factory Pattern" for better testability, and generated professional API documentation using Sphinx.
+This project is now fully integrated with GitHub Actions for Continuous Integration (CI).
 
 ------------------------------------------------------------
-1) Testing (100% Coverage)
+1) Testing (100% Coverage & CI/CD)
 ------------------------------------------------------------
 I used Pytest to ensure reliability across all layers of the application (Database, Web Routes, and ETL Logic).
+The suite enforces a strict 100% coverage threshold.
 
 Key Testing Features:
-- Mocking: All external dependencies (scraper, network calls, file system) are mocked using `unittest.mock`. 
-  Tests never hit the live internet.
-- Factory Pattern: Refactored `app.py` to use `create_app()` so a fresh app instance is created for every test.
-- Database Isolation: Tests run on a temporary `gradcafe_test` database that is wiped clean after every function.
+- **Mocking:** All external dependencies (scraper, network calls, file system) are mocked using `unittest.mock`. 
+    Tests never hit the live internet.
+- **Factory Pattern:** Refactored `src/app.py` to use `create_app()` so a fresh app instance is created for every test.
+- **Database Isolation:** Tests run on a temporary `gradcafe_test` database. I implemented a robust retry loop with connection polling in `conftest.py` to handle CI/CD latency.
+- **Stable Selectors:** The HTML templates (e.g., `analysis.html`) use `data-testid` attributes to ensure tests are resilient to UI changes.
 
-How to Run Tests:
------------------
+How to Run Tests Locally:
+-------------------------
 1. Activate your virtual environment.
-2. Run the full suite:
+2. Ensure your PYTHONPATH includes the source directory:
+   export PYTHONPATH=src  # (On Windows: set PYTHONPATH=src)
+
+3. Run the full suite with markers:
    pytest -m "web or buttons or analysis or db or integration"
 
-3. Check Coverage (Should show 100%):
-   pytest --cov=. --cov-report=term-missing
+4. Check Coverage (Must show 100%):
+   pytest --cov=src --cov-report=term-missing --cov-fail-under=100
 
 ------------------------------------------------------------
-2) Documentation (Sphinx)
+2) Documentation (Sphinx & Read the Docs)
 ------------------------------------------------------------
 I generated full API documentation that covers the Scraper, Cleaner, Loader, and Flask application logic.
+The documentation is hosted live on Read the Docs.
 
-To view the documentation:
-1. Navigate to: docs/build/html/index.html
-2. Open the file in your web browser.
+[Live Documentation]: <INSERT YOUR READ THE DOCS LINK HERE>
 
-To rebuild documentation manually:
+To build documentation manually:
+1. Navigate to the docs folder:
    cd docs
-   .\make.bat html
+2. Run the build command:
+   .\make.bat html  # (On Windows)
+   make html        # (On Linux/Mac)
+3. Open `docs/_build/html/index.html` in your browser.
 
 ------------------------------------------------------------
 3) Architecture & Operational Notes
 ------------------------------------------------------------
+The application logic has been moved to a `src/` directory for better structural organization.
+
 Web/ETL/DB Roles:
-- **Web (Flask):** Handles UI and triggers background jobs.
+- **Web (Flask):** Handles UI and triggers background jobs via `src/app.py`.
 - **ETL (Load/Clean):** Runs in a background thread to keep the UI responsive.
-- **DB (Postgres):** Stores structured applicant data.
+- **DB (Postgres):** Stores structured applicant data using `src/db.py` connection management.
 
 Concurrency & Gating:
-- I implemented a thread lock (`_pull_lock`) in `app.py`.
+- I implemented a thread lock (`_pull_lock`) in the app factory.
 - If a user clicks "Pull Data" while a job is running, the server returns a `409 Conflict` (Busy) response to prevent race conditions.
 
-Idempotency:
-- The database loader uses `ON CONFLICT DO UPDATE` (Upsert). Running the scraper multiple times will not create duplicate rows.
+Idempotency & Robustness:
+- **Schema Safety:** `src/load_data.py` uses `CREATE TABLE IF NOT EXISTS` to prevent crashes during restarts.
+- **Upserts:** The loader uses `ON CONFLICT DO UPDATE` to ensure running the scraper multiple times does not create duplicate rows.
 
 ------------------------------------------------------------
 4) Setup & Installation
@@ -62,7 +74,7 @@ Idempotency:
 Prerequisites:
 - Python 3.10+
 - PostgreSQL installed locally
-- Module 2 output files (optional, as mocks are provided for testing)
+- Git
 
 Installation:
    pip install -r requirements.txt
@@ -77,23 +89,21 @@ Configuration (.env):
 ------------------------------------------------------------
 Files Overview
 ------------------------------------------------------------
+.github/workflows/
+   Contains `tests.yml` which defines the CI/CD pipeline for 100% coverage.
+
 tests/
-   Contains the Pytest suite (e.g., test_real_logic.py, test_force_coverage.py).
+   Contains the Pytest suite:
+   - `conftest.py`: Fixtures for app creation and robust DB teardown.
+   - `test_db_coverage.py`: Targeted tests for edge cases (DSN overrides, schema existence).
+   - `test_*.py`: Feature tests for routes, buttons, and analysis.
+
+src/
+   - `app.py`: The Flask application using Blueprint and Factory Pattern.
+   - `db.py`: Database connection manager with override support for testing.
+   - `load_data.py`: Handles JSON loading, schema creation, and Upserts.
+   - `query_data.py`: Centralized SQL logic for analysis questions.
+   - `scrape.py` & `clean.py`: Logic used by the background worker.
 
 docs/
-   Contains Sphinx configuration and source files.
-
-app.py
-   The Flask application (now using Blueprint and Factory Pattern).
-
-load_data.py
-   Handles JSON loading and database Upserts.
-
-query_data.py
-   Centralized SQL logic for analysis questions.
-
-scrape.py & clean.py
-   Module 2 logic used by the background worker.
-
-generate_answers_pdf.py
-   Generates the PDF report for Module 3 submission.
+   Contains Sphinx configuration (`conf.py`) and `.rst` source files.
