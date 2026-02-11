@@ -53,10 +53,12 @@
     <span class="k">if</span> <span class="n">env_overrides</span><span class="p">:</span>
         <span class="n">env</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">env_overrides</span><span class="p">)</span>
 
+    <span class="c1"># If no overrides are provided, prioritize the global DATABASE_URL</span>
     <span class="n">dsn</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;DATABASE_URL&quot;</span><span class="p">)</span>
-    <span class="k">if</span> <span class="n">dsn</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">dsn</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">env_overrides</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">dsn</span>
 
+    <span class="c1"># If overrides exist OR DATABASE_URL is missing, build DSN manually</span>
     <span class="n">host</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;PGHOST&quot;</span><span class="p">,</span> <span class="s2">&quot;localhost&quot;</span><span class="p">)</span>
     <span class="n">port</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;PGPORT&quot;</span><span class="p">,</span> <span class="s2">&quot;5432&quot;</span><span class="p">)</span>
     <span class="n">user</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;PGUSER&quot;</span><span class="p">,</span> <span class="s2">&quot;postgres&quot;</span><span class="p">)</span>

@@ -54,7 +54,7 @@
 <span class="n">DROP_TABLE_SQL</span> <span class="o">=</span> <span class="s2">&quot;DROP TABLE IF EXISTS applicants;&quot;</span>
 
 <span class="n">CREATE_TABLE_SQL</span> <span class="o">=</span> <span class="s2">&quot;&quot;&quot;</span>
-<span class="s2">CREATE TABLE applicants (</span>
+<span class="s2">CREATE TABLE IF NOT EXISTS applicants (</span>
 <span class="s2">    p_id INTEGER PRIMARY KEY,</span>
 <span class="s2">    university TEXT,</span>
 <span class="s2">    program TEXT,</span>
@@ -129,7 +129,6 @@
 
     <span class="c1"># 2. Parse Date (e.g. &quot;20 Feb 2025&quot; or similar)</span>
     <span class="c1"># The JSON usually has dates like &quot;15 Feb 2026&quot;. We try standard formats.</span>
-    <span class="c1"># Note: If JSON has &quot;February 01, 2026&quot;, adjust the format string.</span>
     <span class="n">raw_date</span> <span class="o">=</span> <span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;date_added&quot;</span><span class="p">)</span>
     <span class="n">formatted_date</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="k">if</span> <span class="n">raw_date</span><span class="p">:</span>
@@ -183,16 +182,12 @@
             <span class="n">cur</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">DROP_TABLE_SQL</span><span class="p">)</span>
             <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Existing &#39;applicants&#39; table dropped.&quot;</span><span class="p">)</span>
         
-        <span class="c1"># Use IF NOT EXISTS so we don&#39;t crash if it&#39;s already there (unless reset=True)</span>
-        <span class="k">try</span><span class="p">:</span>
-            <span class="n">cur</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">CREATE_TABLE_SQL</span><span class="p">)</span>
-            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Table &#39;applicants&#39; created.&quot;</span><span class="p">)</span>
-        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
-            <span class="c1"># If table already exists and we didn&#39;t reset, ignore &quot;duplicate table&quot; error</span>
-            <span class="k">if</span> <span class="s2">&quot;already exists&quot;</span> <span class="ow">in</span> <span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">):</span>
-                <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Table &#39;applicants&#39; already exists. Skipping create.&quot;</span><span class="p">)</span>
-            <span class="k">else</span><span class="p">:</span>
-                <span class="k">raise</span> <span class="n">e</span></div>
+        <span class="c1"># Use IF NOT EXISTS to prevent crashes</span>
+        <span class="n">cur</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">CREATE_TABLE_SQL</span><span class="p">)</span>
+        
+        <span class="c1"># This print statement must exist and match the test assertion</span>
+        <span class="c1"># to reach 100% coverage.</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Table &#39;applicants&#39; created or already exists.&quot;</span><span class="p">)</span></div>
 
 
 
@@ -241,8 +236,6 @@
 
 
 
-<span class="c1"># REPLACE THE BOTTOM OF load_data.py WITH THIS:</span>
-
 <div class="viewcode-block" id="main">
 <a class="viewcode-back" href="../api.html#load_data.main">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
@@ -259,7 +252,6 @@
     <span class="p">)</span>
     <span class="n">args</span> <span class="o">=</span> <span class="n">parser</span><span class="o">.</span><span class="n">parse_args</span><span class="p">()</span>
 
-    <span class="c1"># We removed the try/except block here so tests can see the crash directly</span>
     <span class="n">load_json_to_db</span><span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">json</span><span class="p">,</span> <span class="n">reset</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">reset</span><span class="p">)</span></div>
 
 
