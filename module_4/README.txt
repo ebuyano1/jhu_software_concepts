@@ -107,3 +107,19 @@ src/
 
 docs/
    Contains Sphinx configuration (`conf.py`) and `.rst` source files.
+
+------------------------------------------------------------
+2) Documentation (Sphinx & Read the Docs)
+------------------------------------------------------------
+I generated full API documentation that covers the Scraper, Cleaner, Loader, and Flask application logic.
+The documentation is hosted live on Read the Docs.
+
+[Live Documentation]: https://jhu-software-concepts-p.readthedocs.io/en/latest/
+
+To build documentation manually:
+1. Navigate to the docs folder:
+   cd docs
+2. Run the build command:
+   .\make.bat html  # (On Windows)
+   make html        # (On Linux/Mac)
+3. Open `docs/_build/html/index.html` in your browser.
