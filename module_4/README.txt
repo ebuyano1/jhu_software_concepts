@@ -123,3 +123,35 @@ To build documentation manually:
    .\make.bat html  # (On Windows)
    make html        # (On Linux/Mac)
 3. Open `docs/_build/html/index.html` in your browser.
+
+-------------------------------------------------------------------
+
+To Run
+-------------------------------------------------------------------
+$env:PGUSER="module3_user"
+$env:PGPASSWORD="NewStrongPass123!"
+
+# This ensures all tests, including the one for line 19, are executed
+pytest --cov=src --cov-report=term-missing tests/test_db_coverage.py tests/
+
+
+Coverage Summary
+-------------------------------------------------------------------
+
+# In your PowerShell terminal:
+pytest --cov=src --cov-report=term-missing > coverage_summary.txt
+
+.................................                                        [100%]
+=============================== tests coverage ================================
+______________ coverage: platform win32, python 3.10.11-final-0 _______________
+
+Name                Stmts   Miss Branch BrPart  Cover   Missing
+---------------------------------------------------------------
+src\app.py             66      0     14      0   100%
+src\db.py              38      0      6      0   100%
+src\load_data.py       68      0     22      0   100%
+src\query_data.py      69      0      8      0   100%
+---------------------------------------------------------------
+TOTAL                 241      0     50      0   100%
+Required test coverage of 100% reached. Total coverage: 100.00%
+33 passed in 4.65s
