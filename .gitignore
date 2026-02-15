@@ -23,8 +23,6 @@ instance/
 
 # Data files (do not commit)
 applicant_data.json
-llm_extend_applicant_data*.json
 
 # Module 2 large model files
 module_2/models/
-

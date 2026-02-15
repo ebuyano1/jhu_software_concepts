@@ -128,8 +128,11 @@ To build documentation manually:
 
 To Run
 -------------------------------------------------------------------
+
 $env:PGUSER="module3_user"
 $env:PGPASSWORD="NewStrongPass123!"
+python src/load_data.py --json ../module_2/llm_extend_applicant_data_liv.json --reset
+python src/app.py to run the original Module 3 Application
 
 # This ensures all tests, including the one for line 19, are executed
 pytest --cov=src --cov-report=term-missing tests/test_db_coverage.py tests/
