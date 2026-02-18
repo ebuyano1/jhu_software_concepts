@@ -22,21 +22,21 @@ jobs:
       - name: "Install Project Dependencies"
         run: |
           pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install -e .
+          pip install -r module_5/requirements.txt
+          pip install -e module_5/
 
       # 1. Run Pylint and fail if score is below 10
       - name: "Action 1: Quality Check (Pylint)"
-        run: pylint src/ --fail-under=10
+        run: pylint module_5/src/ --fail-under=10
 
       # 2. Run your tests (Basic Pytest)
       - name: "Action 2: Run Functional Tests (Pytest)"
-        run: pytest
+        run: pytest module_5/
 
       # 3. Generate dependency.svg (and fail if missing)
       - name: "Action 3: Dependency Visualization (pydeps)"
         run: |
-          pydeps src/app.py --noshow -T svg -o dependency.svg
+          pydeps module_5/src/app.py --noshow -T svg -o dependency.svg
           if [ ! -f dependency.svg ]; then echo "SVG missing" && exit 1; fi
 
       # 4. Run snyk test (Produce output)
@@ -46,8 +46,8 @@ jobs:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
           command: test
-          args: --severity-threshold=high
+          args: --severity-threshold=high --file=module_5/requirements.txt
 
       # 5. Run Pytest and fail if coverage is below 100
       - name: "Action 5: Coverage Enforcement (100% Required)"
-        run: pytest --cov=src --cov-fail-under=100
+        run: pytest --cov=module_5/src --cov-fail-under=100
