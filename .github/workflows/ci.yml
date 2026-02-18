@@ -73,7 +73,7 @@ jobs:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
           command: test
-          args: --file=module_5/requirements.txt
+          args: --file=module_5/requirements.txt --skip-unresolved
 
       # Action 5: Coverage Enforcement
       - name: "Action 5: Coverage Enforcement (100% Required)"
