@@ -5,57 +5,76 @@ on: [push, pull_request]
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
-    # This ensures all 'run' commands start inside the module_5 folder
-    defaults:
-      run:
-        working-directory: ./module_5
+    # --- ADD THE DATABASE SERVICE HERE ---
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        # Wait for postgres to be ready
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
-      - name: "Checkout Code"
+      - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: "Set up Python"
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
-      - name: "Install System Dependencies"
+      - name: Install System Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y graphviz
 
-      - name: "Install Project Dependencies"
+      - name: Install Project Dependencies
         run: |
-          pip install --upgrade pip
           pip install -r requirements.txt
           pip install -e .
 
-      # 1. Run Pylint and fail if score is below 10
+      # 1. Run Pylint (Score 10 Required)
       - name: "Action 1: Quality Check (Pylint)"
         run: |
           export PYTHONPATH=$PYTHONPATH:$(pwd)/src
           pylint src/ --fail-under=10
 
-
-      # 2. Run your tests (Basic Pytest)
+      # 2. Run Tests (Requires DB Env Vars)
       - name: "Action 2: Run Functional Tests (Pytest)"
+        env:
+          PGHOST: localhost
+          PGUSER: postgres
+          PGPASSWORD: password
+          PGPORT: 5432
         run: pytest
 
-      # 3. Generate dependency.svg (and fail if missing)
-      - name: "Action 3: Dependency Visualization (pydeps)"
+      # 3. Generate dependency.svg
+      - name: "Action 3: Dependency Visualization"
         run: |
           pydeps src/app.py --noshow -T svg -o dependency.svg
-          if [ ! -f dependency.svg ]; then echo "SVG missing" && exit 1; fi
+          if [ ! -f dependency.svg ]; then exit 1; fi
 
-      # 4. Run snyk test (Produce output)
+      # 4. Snyk Security Scan
       - name: "Action 4: Security Scan (Snyk)"
         uses: snyk/actions/python-3.10@master
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
           command: test
-          args: --severity-threshold=high --file=module_5/requirements.txt
 
-      # 5. Run Pytest and fail if coverage is below 100
+      # 5. Coverage Enforcement (Requires DB Env Vars)
       - name: "Action 5: Coverage Enforcement (100% Required)"
+        env:
+          PGHOST: localhost
+          PGUSER: postgres
+          PGPASSWORD: password
+          PGPORT: 5432
         run: pytest --cov=src --cov-fail-under=100
