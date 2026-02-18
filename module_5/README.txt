@@ -1,0 +1,125 @@
+------------------------------------------------------------
+Module 5: Software Assurance (Pylint, SQL Injection Defenses, Dependencies) with AI
+------------------------------------------------------------
+
+Overview
+========
+This folder contains the GradCafe Analytics application from Module 4, copied into a new
+Module 5 submission and updated to follow the software assurance requirements.
+
+The application:
+- Loads GradCafe applicant data from JSON into a PostgreSQL table (src/load_data.py)
+- Runs a set of required SQL analysis questions and displays them on a Flask webpage (src/query_data.py + src/app.py)
+- Can optionally refresh data via the Pull Data workflow (scrape/clean/load)
+- Generates a printable PDF report of the answers (src/generate_answers_pdf.py)
+
+What I changed for Module 5 (without changing the app logic)
+============================================================
+1) Pylint (10/10)
+   - I added a .pylintrc file in this folder and linted the module_5 codebase.
+   - To run it in your terminal use this command: pylint src 
+   - When running pylint the project prints:
+     "Your code has been rated at 10.00/10"
+
+2) SQL Injection Defenses (psycopg.sql)
+   - All SQL statements are composed using psycopg.sql (sql.SQL).
+   - SQL statements are defined separately from the execute() calls.
+   - Any variable values are passed using placeholders (%s) rather than string formatting.
+   - Queries that return multiple rows include an inherent LIMIT.
+
+   Files updated:
+   - src/query_data.py (analysis queries)
+   - src/load_data.py (schema + insert/upsert statements)
+
+3) Dependency Analysis (pydeps)
+   - dependency.svg was generated for src/app.py using pydeps.
+   - A short dependency explanation is included in dependencies_explained.txt.
+
+4) Virtual environment
+   - requirements.txt includes the runtime dependencies plus the Module 5 tooling:
+     pylint and pydeps (and snyk, which is used for the scan step).
+
+5) Snyk scan proof
+   - module_5/screenshots/snyk_analysis.png
+   - module_5/screenshots/snyk-extra-credit.png
+   
+How to run (local)
+==================
+1) Create and activate a virtual environment
+   python -m venv .venv
+   .\.venv\Scripts\activate
+
+2) Install dependencies
+   pip install -r requirements.txt
+
+3) Set database connection
+   Option A - old way which we removed (single URL):
+     setx DATABASE_URL "postgresql://module3_user:NewStrongPass123!@localhost:5432/module3_db"
+   Option B more Secure (PG* vars):
+     setx PGUSER ...
+     setx PGPASSWORD ...
+     setx PGHOST ...
+     setx PGPORT ...
+     setx PGDATABASE ...
+
+4) Load the JSON into PostgreSQL (reset will drop/recreate the table)
+   python src/load_data.py --json llm_extend_applicant_data_liv.json --reset
+
+5) Run the Flask app
+   python src/app.py
+   Open http://127.0.0.1:5000/analysis
+
+How to generate the PDF answers report
+======================================
+python src/generate_answers_pdf.py
+
+Pylint command used
+===================
+From the module_5 folder:
+pylint src 
+
+Dependency graph command used
+=============================
+From module_5/src:
+pydeps app.py --noshow -o ../dependency.svg
+
+Snyk scan (required by assignment)
+==================================
+The screenshot saved as module_5/snyk-analysis.png.
+
+
+
+Notes
+------------------
+Snyk initially reported 2 High severity issues. I upgraded pillow from 12.1.0 to 12.1.1 (pulled in via reportlab) 
+to remediate the out-of-bounds write vulnerability. The remaining diskcache vulnerability is introduced transitively 
+by llama-cpp-python and currently has no upgrade or patch available, so I added a .snyk policy ignore with an expiry date 
+and rationale. After these steps, snyk test reports no vulnerable paths.
+
+This was the output:
+----------------------
+Testing C:\Users\16462\Desktop\School\JH\jhu_software_concepts\jhu_software_concepts\module_5... 
+Tested 72 dependencies for known issues, found 2 issues, 2 vulnerable paths. Issues to fix by upgrading dependencies: 
+Pin pillow@12.1.0 to pillow@12.1.1 to fix ✗ Out-of-bounds Write (new) [High Severity][https://security.snyk.io/vuln/SNYK-PYTHON-PILLOW-15265439] 
+in pillow@12.1.0 introduced by reportlab@4.4.9 > pillow@12.1.0 Issues with no direct upgrade or patch: ✗ Deserialization of 
+Untrusted Data [High Severity][https://security.snyk.io/vuln/SNYK-PYTHON-DISKCACHE-15268422] in diskcache@5.6.3 introduced by 
+llama-cpp-python@0.3.16 > diskcache@5.6.3 No upgrade or patch available
+
+
+----------------------------------------------------------------------------------------------------
+
+Fresh Install Instructions
+--------------------------
+This project requires Python 3.9+ and a running PostgreSQL instance. 
+
+Option 1: Using uv (Recommended for Speed & Reproducibility)
+1. uv venv
+2. source .venv/bin/activate  # (On Windows: .venv\Scripts\activate)
+3. uv pip sync requirements.txt
+4. uv pip install -e .   
+
+Option 2: Using standard pip
+1. python -m venv .venv
+2. source .venv/bin/activate  # (On Windows: .venv\Scripts\activate)
+3. pip install -r requirements.txt
+4. pip install -e .      

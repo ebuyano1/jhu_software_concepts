@@ -1,0 +1,116 @@
+/* static/styles.css */
+
+:root {
+    --primary: #2c3e50;
+    --secondary: #3498db;
+    --accent: #e74c3c;
+    --bg: #f4f7f6;
+    --card-bg: #ffffff;
+    --text: #333;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: var(--bg);
+    color: var(--text);
+    margin: 0;
+    padding: 20px;
+}
+
+.container {
+    max-width: 1000px;
+    margin: 0 auto;
+}
+
+header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 30px;
+    border-bottom: 2px solid #ddd;
+    padding-bottom: 20px;
+}
+
+h1 { margin: 0; font-size: 1.8rem; color: var(--primary); }
+.subtitle { color: #666; font-size: 0.9rem; margin-top: 5px; }
+
+/* Button Styling */
+.controls {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+button {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-weight: bold;
+    transition: opacity 0.2s;
+}
+
+button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.btn-pull { background-color: var(--primary); color: white; }
+.btn-update { background-color: var(--secondary); color: white; }
+
+#status-display {
+    font-size: 0.85rem;
+    font-style: italic;
+    color: #555;
+    margin-right: 15px;
+}
+
+/* Results Cards */
+.result-card {
+    background: var(--card-bg);
+    border-radius: 8px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+    padding: 20px;
+    margin-bottom: 20px;
+    border-left: 5px solid var(--secondary);
+}
+
+.question {
+    font-size: 1.1rem;
+    font-weight: bold;
+    margin-bottom: 10px;
+    color: var(--primary);
+}
+
+.answer-box {
+    background-color: #f8f9fa;
+    padding: 15px;
+    border-radius: 4px;
+    font-size: 1rem;
+    color: #2c3e50;
+    margin-bottom: 10px;
+    font-weight: 500;
+}
+
+/* Collapsible Details */
+details {
+    margin-top: 10px;
+    font-size: 0.9rem;
+    color: #666;
+    cursor: pointer;
+}
+
+summary { outline: none; margin-bottom: 5px; }
+
+.logic-text { margin-bottom: 5px; font-style: italic; }
+
+code {
+    display: block;
+    background: #eee;
+    padding: 10px;
+    border-radius: 4px;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 0.85rem;
+    white-space: pre-wrap;
+    color: #d63031;
+}

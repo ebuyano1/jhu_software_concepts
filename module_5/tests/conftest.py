@@ -1,0 +1,85 @@
+"""
+tests/conftest.py - Pytest Fixtures (Factory Pattern)
+"""
+import pytest
+import psycopg
+from psycopg.rows import dict_row
+from psycopg import Connection
+import os
+import sys
+import time  # Essential for the retry delay
+
+# Ensure module_4 is in path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+from app import create_app
+from db import get_db_dsn
+from load_data import ensure_schema
+
+TEST_DB_NAME = "gradcafe_test"
+
+@pytest.fixture(scope="session")
+def test_db():
+    # 1. Manually build maintenance DSN to ensure we are NOT in gradcafe_test
+    # This addresses the Git helper's concern about get_db_dsn overrides.
+    user = os.getenv("PGUSER", "postgres")
+    password = os.getenv("PGPASSWORD", "password")
+    host = os.getenv("PGHOST", "localhost")
+    port = os.getenv("PGPORT", "5432")
+    maintenance_dsn = f"dbname=postgres user={user} password={password} host={host} port={port}"
+    
+    conn: Connection = psycopg.connect(maintenance_dsn)
+    conn.autocommit = True
+    cur = conn.cursor()
+    
+    # 2. Aggressive Cleanup Loop
+    for i in range(10):
+        try:
+            # Forcibly terminate all other connections to the target DB
+            cur.execute("""
+                SELECT pg_terminate_backend(pid) 
+                FROM pg_stat_activity 
+                WHERE datname = %s AND pid <> pg_backend_pid();
+            """, (TEST_DB_NAME,))
+            
+            # Polling: Wait up to 10 seconds for connections to clear
+            for _ in range(5):
+                cur.execute("SELECT COUNT(*) FROM pg_stat_activity WHERE datname = %s;", (TEST_DB_NAME,))
+                if cur.fetchone()[0] == 0:
+                    break
+                time.sleep(2)
+
+            # Attempt the drop
+            cur.execute(f"DROP DATABASE IF EXISTS {TEST_DB_NAME};")
+            break 
+        except psycopg.errors.ObjectInUse:
+            if i == 9: raise 
+            time.sleep(5) # Final buffer for CI latency
+            
+    # 3. Recreate the database
+    cur.execute(f"CREATE DATABASE {TEST_DB_NAME};")
+    cur.close()
+    conn.close()
+    
+    # Return the correct test DSN for the rest of the suite
+    return f"dbname={TEST_DB_NAME} user={user} password={password} host={host} port={port}"
+
+@pytest.fixture(scope="function")
+def db_cursor(test_db, mocker):
+    mocker.patch("db.get_db_dsn", return_value=test_db)
+    ensure_schema(reset=True)
+    conn: Connection = psycopg.connect(test_db) # Add hint here
+    cur = conn.cursor(row_factory=dict_row)
+    yield cur
+    conn.rollback()
+    cur.execute("TRUNCATE TABLE applicants;")
+    conn.commit()
+    cur.close()
+    conn.close()
+
+@pytest.fixture
+def client(test_db, mocker):
+    mocker.patch("db.get_db_dsn", return_value=test_db)
+    app = create_app({"TESTING": True})
+    with app.test_client() as client:
+        yield client

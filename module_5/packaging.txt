@@ -1,0 +1,11 @@
+The Importance of Packaging in Software Engineering
+
+Implementing a setup.py file transforms a collection of individual scripts into a formal Python package, 
+which is a fundamental practice in software assurance and reproducibility. Packaging allows the project to 
+be installed in "editable mode" (pip install -e .), which ensures that internal module imports 
+(such as importing db.py into app.py) work consistently across different environments, regardless of the 
+user's current working directory. By explicitly defining dependencies and metadata, we eliminate the common 
+"it works on my machine" problem, allowing automated tools like uv or CI/CD pipelines to recreate the exact 
+environment needed for secure execution. Furthermore, formal packaging centralizes the management of 
+third-party libraries, making it easier to track vulnerabilities and ensure that all developers and deployment 
+servers are using the same verified versions of critical software.

@@ -1,0 +1,25 @@
+# Application Dependencies
+flask>=3.0.0
+psycopg[binary]>=3.2.0
+python-dotenv>=1.0.1
+requests>=2.31.0
+beautifulsoup4>=4.12.3
+huggingface_hub
+llama-cpp-python
+reportlab>=4.0.0
+
+# Testing Dependencies (Module 4)
+pytest>=7.4.0
+pytest-cov>=4.1.0
+pytest-mock>=3.12.0
+
+# Documentation Dependencies (Module 4)
+sphinx>=7.0.0
+sphinx-rtd-theme>=2.0.0
+
+# Software Assurance Tooling (Module 5)
+pylint>=3.0.0
+pydeps>=1.12.20
+
+pillow==12.1.1
+

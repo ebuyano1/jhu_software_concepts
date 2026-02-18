@@ -1,0 +1,52 @@
+Module 5: Database Hardening & Least Privilege Report
+
+Permissions Granted: I have restricted the module3_user to have only CONNECT privileges on the database and SELECT privileges on the applicants table.
+
+
+
+Why: This follows the Principle of Least Privilege. Since the application only performs data analysis and does not need to modify, delete, or create tables, a read-only SELECT permission is all it needs. This setup ensures that if the app is ever compromised, it can’t be used to drop tables or mess with the database schema. By sticking to SELECT only, I’ve also mitigated risks like unauthorized data modification or total data loss; even if an attacker found a SQL injection vulnerability, they wouldn’t be able to DELETE records or TRUNCATE the table.
+
+
+The Hardening Process (Step-by-Step)
+1. Stripping Administrative Attributes
+At first, the user account had high-level powers like CREATEDB and CREATEROLE. As part of the hardening, I used ALTER ROLE to set these to NOCREATEDB and NOCREATEROLE. This ensures that even if someone gets into the app, they can't create new users, delete the database, or bypass security.
+
+
+2. Implementing "Zero Trust" and Fixing Ownership
+I realized that even with no global attributes, the user could still DROP the table because they were the default owner. I had to transfer ownership to the postgres admin to close this loophole. I also revoked everything from PUBLIC to stop "ghost permissions" from leaking through.
+
+3. Final Lockdown Commands
+I ran these commands as the postgres superuser to make sure the hardening was ironclad:
+
+SQL
+-- Remove any group or public inheritance leaks
+REVOKE ALL ON SCHEMA public FROM PUBLIC;
+REVOKE ALL ON DATABASE module3_db FROM PUBLIC;
+
+-- Lock down the schema
+ALTER SCHEMA public OWNER TO postgres;
+REVOKE ALL ON SCHEMA public FROM module3_user;
+GRANT USAGE ON SCHEMA public TO module3_user;
+
+-- Secure the actual table data
+ALTER TABLE applicants OWNER TO postgres;
+REVOKE ALL ON TABLE applicants FROM module3_user;
+GRANT SELECT ON TABLE applicants TO module3_user;
+
+
+Verification & Testing
+I verified the hardening by trying to run the data loading script using the module3_user credentials, which gave me a permission denied error—exactly what I wanted to see.
+
+I also did a manual check in the terminal:
+
+Test: I logged in as module3_user and tried DROP TABLE applicants;.
+
+Result: I got ERROR: must be owner of table applicants.
+
+
+Conclusion: The 'Least Privilege' policy is confirmed and active.
+
+Post-Mortem: Lessons in Software Assurance
+A major challenge I ran into was how PostgreSQL handles the PUBLIC role and object ownership. I learned that just stripping user attributes isn't enough; if a user creates a table, they own it and can destroy it regardless of other settings.
+
+By moving table ownership to the postgres admin and revoking ALL from the PUBLIC role on the database and schema, I successfully fixed these vulnerabilities. This "Defense in Depth" approach makes sure the module3_user is in a true Default Deny environment, where it can only read the data it needs and nothing else.

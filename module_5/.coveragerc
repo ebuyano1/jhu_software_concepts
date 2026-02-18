@@ -1,0 +1,20 @@
+[run]
+branch = True
+source = src
+omit =
+    */scrape.py
+    */clean.py
+    */generate_answers_pdf.py
+    */llm_hosting/*
+    */tests/*
+
+[report]
+# This regex list is ultra-permissive to catch all 'main' block variations
+exclude_lines =
+    pragma: no cover
+    raise AssertionError
+    raise NotImplementedError
+    if __name__ == .__main__.:
+    if __name__ == "__main__":
+    if __name__ == '__main__':
+    main()

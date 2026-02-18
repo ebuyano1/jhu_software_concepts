@@ -1,0 +1,3 @@
+[MASTER]
+ignore=__pycache__
+extension-pkg-allow-list=psycopg

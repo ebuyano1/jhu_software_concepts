@@ -1,0 +1,17 @@
+Dependency Graph Analysis
+----------------------------------------------------------------------------------------------------------
+The dependency graph depicts a modular Three Tier application architecture with the app.py module at its core, 
+since it is the presentation and routing hub for my Flask app. As an entry point into the overall application 
+flow, app.py coordinates all high-level flows of control by calling upon query_data.py for analytical outputs 
+and load_data.py for populating the database with data. The dependency graph illustrates that query_data.py 
+serves as a critical logic intermediary between the app.py module and the low-level database access provided 
+through the db.py module. Additionally, since dependencies on the external libraries required for db.py's 
+operations, such as psycopg and python-dotenv, are isolated from one another; the database connection logic 
+and the sensitive secret management necessary to connect securely to the database are isolated from the 
+remainder of the application. The visualization also illustrates a strict one way flow of dependencies, 
+thus preventing circular dependencies from forming and ensuring that the scraper (scrape.py) and data 
+loaders remain decoupled from the web front-end application. This structure shows a clear separation of 
+concerns and will help to reduce code complexity and improve the overall security posture of an application 
+by isolating sensitive database operations from the rest of the app. Lastly, generate_answers_pdf.py 
+demonstrates another layer of utility dependence on the reportlab library for creating printable documents 
+from the processed data.
