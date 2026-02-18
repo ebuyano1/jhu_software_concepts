@@ -5,7 +5,12 @@ on: [push, pull_request]
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
-    # --- ADD THE DATABASE SERVICE HERE ---
+    
+    # This handles the fact that everything is inside the module_5 folder
+    defaults:
+      run:
+        working-directory: ./module_5
+
     services:
       postgres:
         image: postgres:15
@@ -15,7 +20,6 @@ jobs:
           POSTGRES_DB: postgres
         ports:
           - 5432:5432
-        # Wait for postgres to be ready
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -41,13 +45,11 @@ jobs:
           pip install -r requirements.txt
           pip install -e .
 
-      # 1. Run Pylint (Score 10 Required)
       - name: "Action 1: Quality Check (Pylint)"
         run: |
           export PYTHONPATH=$PYTHONPATH:$(pwd)/src
           pylint src/ --fail-under=10
 
-      # 2. Run Tests (Requires DB Env Vars)
       - name: "Action 2: Run Functional Tests (Pytest)"
         env:
           PGHOST: localhost
@@ -56,25 +58,23 @@ jobs:
           PGPORT: 5432
         run: pytest
 
-      # 3. Generate dependency.svg
       - name: "Action 3: Dependency Visualization"
         run: |
           pydeps src/app.py --noshow -T svg -o dependency.svg
           if [ ! -f dependency.svg ]; then exit 1; fi
 
-      # 4. Snyk Security Scan
       - name: "Action 4: Security Scan (Snyk)"
         uses: snyk/actions/python-3.10@master
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
           command: test
+          args: --file=module_5/requirements.txt
 
-      # 5. Coverage Enforcement (Requires DB Env Vars)
       - name: "Action 5: Coverage Enforcement (100% Required)"
         env:
           PGHOST: localhost
           PGUSER: postgres
-          PGPASSWORD: password
           PGPORT: 5432
+          PGPASSWORD: password
         run: pytest --cov=src --cov-fail-under=100
