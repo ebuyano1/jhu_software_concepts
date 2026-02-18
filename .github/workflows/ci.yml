@@ -33,8 +33,9 @@ jobs:
       # 1. Run Pylint and fail if score is below 10
       - name: "Action 1: Quality Check (Pylint)"
         run: |
-          export PYTHONPATH=$PYTHONPATH:.
+          export PYTHONPATH=$PYTHONPATH:$(pwd)/src
           pylint src/ --fail-under=10
+
 
       # 2. Run your tests (Basic Pytest)
       - name: "Action 2: Run Functional Tests (Pytest)"
