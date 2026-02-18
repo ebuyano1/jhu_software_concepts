@@ -6,40 +6,41 @@ jobs:
   build-and-test:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
+      - name: "Checkout Code"
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: "Set up Python"
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
-      - name: Install System Dependencies
+      - name: "Install System Dependencies"
         run: |
           sudo apt-get update
           sudo apt-get install -y graphviz
 
-      - name: Install Project Dependencies
+      - name: "Install Project Dependencies"
         run: |
+          pip install --upgrade pip
           pip install -r requirements.txt
           pip install -e .
 
       # 1. Run Pylint and fail if score is below 10
-      - name: Action 1: Quality Check (Pylint)
+      - name: "Action 1: Quality Check (Pylint)"
         run: pylint src/ --fail-under=10
 
       # 2. Run your tests (Basic Pytest)
-      - name: Action 2: Run Functional Tests (Pytest)
+      - name: "Action 2: Run Functional Tests (Pytest)"
         run: pytest
 
       # 3. Generate dependency.svg (and fail if missing)
-      - name: Action 3: Dependency Visualization (pydeps)
+      - name: "Action 3: Dependency Visualization (pydeps)"
         run: |
           pydeps src/app.py --noshow -T svg -o dependency.svg
           if [ ! -f dependency.svg ]; then echo "SVG missing" && exit 1; fi
 
       # 4. Run snyk test (Produce output)
-      - name: Action 4: Security Scan (Snyk)
+      - name: "Action 4: Security Scan (Snyk)"
         uses: snyk/actions/python-3.10@master
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
@@ -48,5 +49,5 @@ jobs:
           args: --severity-threshold=high
 
       # 5. Run Pytest and fail if coverage is below 100
-      - name: Action 5: Coverage Enforcement (100% Required)
+      - name: "Action 5: Coverage Enforcement (100% Required)"
         run: pytest --cov=src --cov-fail-under=100
