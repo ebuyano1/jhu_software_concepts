@@ -16,7 +16,7 @@ jobs:
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: password
-          POSTGRES_DB: postgres  # <-- This created the DB named 'postgres'
+          POSTGRES_DB: postgres
         ports:
           - 5432:5432
         options: >-
@@ -43,31 +43,34 @@ jobs:
         run: |
           pip install -r requirements.txt
           pip install -e .
+          pip install pylint pytest pytest-cov pydeps
 
-      # Action 1: Quality Check
+      # Requirement 1: Enforce Linting
       - name: "Action 1: Quality Check (Pylint)"
         run: |
           export PYTHONPATH=$PYTHONPATH:$(pwd)/src
-          pylint src/ --fail-under=10
+          pylint src/ --fail-under=10 
 
-      # Action 2: Functional Tests
+      # Requirement 2: Enforce Tests
       - name: "Action 2: Run Functional Tests (Pytest)"
         env:
           PGHOST: localhost
           PGUSER: postgres
           PGPASSWORD: password
           PGPORT: 5432
-          PGDATABASE: postgres  # <-- ADDED THIS LINE
+          PGDATABASE: postgres
         run: pytest
 
-      # Action 3: Dependency Visualization
+      # Requirement 3: Enforce Dependency Graph
       - name: "Action 3: Dependency Visualization"
         run: |
-          pydeps src/app.py --noshow -T svg -o dependency.svg
-          if [ ! -f dependency.svg ]; then exit 1; fi
+          # Runs the exact command you used in the terminal
+          pydeps src/app.py --noshow -o dependency.svg
+          # Enforcement: Fail if the graph isn't generated
+          if [ ! -f dependency.svg ]; then echo "Graph generation failed"; exit 1; fi
 
-      # Action 4: Security Scan
-      - name: "Action 4: Security Scan (Snyk)"
+      # Requirement 4a: Dependency Security (SCA)
+      - name: "Action 4a: Snyk Open Source Scan"
         uses: snyk/actions/python-3.10@master
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
@@ -75,12 +78,22 @@ jobs:
           command: test
           args: --file=module_5/requirements.txt --skip-unresolved
 
-      # Action 5: Coverage Enforcement
-      - name: "Action 5: Coverage Enforcement (100% Required)"
+      # Requirement 4b: Custom Code Security (SAST)
+      - name: "Action 4b: Snyk Code Scan"
+        uses: snyk/actions/python-3.10@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          command: code test
+          # Path to the source code folder inside module_5
+          args: module_5/src 
+
+      # Requirement 5: Enforce Coverage
+      - name: "Action 5: Coverage Enforcement (100%)"
         env:
           PGHOST: localhost
           PGUSER: postgres
           PGPASSWORD: password
           PGPORT: 5432
-          PGDATABASE: postgres  # <-- ADDED THIS LINE
+          PGDATABASE: postgres
         run: pytest --cov=src --cov-fail-under=100
