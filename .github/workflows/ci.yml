@@ -43,7 +43,6 @@ jobs:
         run: |
           pip install -r requirements.txt
           pip install -e .
-          pip install pylint pytest pytest-cov pydeps
 
       # Requirement 1: Enforce Linting
       - name: "Action 1: Quality Check (Pylint)"
@@ -64,9 +63,7 @@ jobs:
       # Requirement 3: Enforce Dependency Graph
       - name: "Action 3: Dependency Visualization"
         run: |
-          # Runs the exact command you used in the terminal
           pydeps src/app.py --noshow -o dependency.svg
-          # Enforcement: Fail if the graph isn't generated
           if [ ! -f dependency.svg ]; then echo "Graph generation failed"; exit 1; fi
 
       # Requirement 4a: Dependency Security (SCA)
@@ -78,14 +75,13 @@ jobs:
           command: test
           args: --file=module_5/requirements.txt --skip-unresolved
 
-      # Requirement 4b: Custom Code Security (SAST)
+      # Requirement 4b: Custom Code Security (SAST) - ADDED THIS
       - name: "Action 4b: Snyk Code Scan"
         uses: snyk/actions/python-3.10@master
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
           command: code test
-          # Path to the source code folder inside module_5
           args: module_5/src 
 
       # Requirement 5: Enforce Coverage
@@ -97,3 +93,10 @@ jobs:
           PGPORT: 5432
           PGDATABASE: postgres
         run: pytest --cov=src --cov-fail-under=100
+
+      # Requirement 6: Upload the graph so it can be verified
+      - name: "Action 6: Upload Dependency Graph"
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-graph
+          path: module_5/dependency.svg
