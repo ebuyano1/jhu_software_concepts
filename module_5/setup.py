@@ -26,6 +26,6 @@ setup(
             "sphinx>=7.0.0",
         ],
     },
-    author="Your Name",
+    author="Eugene Buyanovsky",
     description="A reproducible GradCafe analytics application with hardened database access.",
 )

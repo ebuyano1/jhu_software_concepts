@@ -42,6 +42,12 @@ What I changed for Module 5 (without changing the app logic)
 5) Snyk scan proof
    - module_5/screenshots/snyk_analysis.png
    - module_5/screenshots/snyk-extra-credit.png
+   Also proof in my Word .docx 
+
+6) I enforced 100% Code Coverage using pytest-cov. Since our CI pipeline will literally 
+    fail if coverage drops below 100%, that's a massive software assurance achievement. 
+    The CI passes Pylint, Pytest, Snyk Test, Snyk Code Test, Generates dependencies svg 
+
    
 How to run (local)
 ==================
@@ -87,10 +93,9 @@ Snyk scan (required by assignment)
 ==================================
 The screenshot saved as module_5/snyk-analysis.png.
 
-
-
 Notes
 ------------------
+I ran a Static Application Security Testing (SAST) scan using snyk code test to check for hardcoded secrets and logic flaws.
 Snyk initially reported 2 High severity issues. I upgraded pillow from 12.1.0 to 12.1.1 (pulled in via reportlab) 
 to remediate the out-of-bounds write vulnerability. The remaining diskcache vulnerability is introduced transitively 
 by llama-cpp-python and currently has no upgrade or patch available, so I added a .snyk policy ignore with an expiry date 
