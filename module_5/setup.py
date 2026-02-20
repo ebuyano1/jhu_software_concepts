@@ -17,7 +17,7 @@ setup(
         "reportlab>=4.0.0",
         "pillow==12.1.1",
     ],
-    # You can also add development tools as optional extras
+    # Development tools as optional extras
     extras_require={
         "dev": [
             "pylint>=3.0.0",
