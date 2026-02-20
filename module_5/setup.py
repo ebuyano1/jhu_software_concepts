@@ -3,9 +3,8 @@ from setuptools import setup, find_packages
 setup(
     name="module_5_gradcafe_analytics",
     version="0.1.0",
-    # find_packages() automatically finds the 'src' or other internal modules
-    packages=find_packages(),
-    # These are the core runtime dependencies from your requirements.txt
+    packages=find_packages(where="src"), # Correctly finds modules in /src
+    package_dir={"": "src"},             # Maps the root to /src
     install_requires=[
         "flask>=3.0.0",
         "psycopg[binary]>=3.2.0",
@@ -15,15 +14,17 @@ setup(
         "huggingface_hub",
         "llama-cpp-python",
         "reportlab>=4.0.0",
-        "pillow==12.1.1",
+        "pillow==12.1.1", # Critical security fix for vulnerabilities
     ],
-    # Development tools as optional extras
     extras_require={
         "dev": [
             "pylint>=3.0.0",
             "pydeps>=1.12.20",
             "pytest>=7.4.0",
+            "pytest-cov>=4.1.0",   # Added for CI Coverage enforcement
+            "pytest-mock>=3.12.0",  # Added to match requirements.txt
             "sphinx>=7.0.0",
+            "sphinx-rtd-theme>=2.0.0", # Added to match requirements.txt
         ],
     },
     author="Eugene Buyanovsky",
