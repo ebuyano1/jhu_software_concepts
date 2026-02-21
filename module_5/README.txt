@@ -7,6 +7,9 @@ Overview
 This folder contains the GradCafe Analytics application from Module 4, copied into a new
 Module 5 submission and updated to follow the software assurance requirements.
 
+
+Fo detailed write up please see The Module 5 Report - module5_report.pdf
+
 The application:
 - Loads GradCafe applicant data from JSON into a PostgreSQL table (src/load_data.py)
 - Runs a set of required SQL analysis questions and displays them on a Flask webpage (src/query_data.py + src/app.py)
@@ -37,7 +40,6 @@ What I changed for Module 5 (without changing the app logic)
 
    A full architectural breakdown of the Three-Tier structure is provided in Section 2 of the Module 5_Report.pdf.
 
-
 4) Virtual environment
    - requirements.txt includes the runtime dependencies plus the Module 5 tooling:
      pylint and pydeps (and snyk, which is used for the scan step).
@@ -45,12 +47,12 @@ What I changed for Module 5 (without changing the app logic)
 5) Snyk scan proof
    - module_5/screenshots/snyk_analysis.png
    - module_5/screenshots/snyk-extra-credit.png
-   Also proof in my Word .docx 
+   Also proof in module5_report.pdf
 
 6) I enforced 100% Code Coverage using pytest-cov. Since our CI pipeline will literally 
     fail if coverage drops below 100%, that's a massive software assurance achievement. 
     The CI passes Pylint, Pytest, Snyk Test, Snyk Code Test, Generates dependencies svg 
-
+    shown in screenshot in module5_report.pdf
    
 How to run (local)
 ==================
