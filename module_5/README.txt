@@ -7,6 +7,7 @@ Overview
 This folder contains the GradCafe Analytics application from Module 4, copied into a new
 Module 5 submission and updated to follow the software assurance requirements.
 
+The summary and report for Module 5 is located in module5_report.pdf
 
 Fo detailed write up please see The Module 5 Report - module5_report.pdf
 
